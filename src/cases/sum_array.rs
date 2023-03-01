@@ -19,7 +19,7 @@ pub fn run() {
     let array: Vec<u64> = (START .. START + count).map(|number| random(number) as u64).collect();
 
     benchmark(
-      if count == 1024 * 1024 * 1024 + 1234 { ChartStyle::Right } else { ChartStyle::LeftWithKey },
+      ChartStyle::LeftWithKey,
       &name,
       || reference_sequential_single(&array)
     )

@@ -17,7 +17,7 @@ pub fn run() {
   for count in [1024 * 1024 * 32 + 1234, 1024 * 1024 * 128 + 1234, 1024 * 1024 * 1024 + 1234] {
     let name = "Sum function (n = ".to_owned() + &(count).to_formatted_string(&Locale::en) + ")";
     benchmark(
-      if count == 1024 * 1024 * 1024 + 1234 { ChartStyle::Right } else { ChartStyle::Left },
+      ChartStyle::Right,
       &name,
       || reference_sequential_single(count)
     )

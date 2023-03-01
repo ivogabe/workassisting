@@ -85,7 +85,7 @@ impl<T> Drop for Benchmarker<T> {
     let file_gnuplot = File::create(filename.clone() + ".gnuplot").unwrap();
     let mut gnuplot = BufWriter::new(&file_gnuplot);
     writeln!(&mut gnuplot, "set title \"{}\"", self.name).unwrap();
-    writeln!(&mut gnuplot, "set terminal pdf size {},2.43", if self.chart_style == ChartStyle::Right {2.3} else {2.6}).unwrap();
+    writeln!(&mut gnuplot, "set terminal pdf size {},2.6", if self.chart_style == ChartStyle::Right {2.3} else {2.6}).unwrap();
     writeln!(&mut gnuplot, "set output \"{}\"", filename.clone() + ".pdf").unwrap();
     if self.chart_style == ChartStyle::LeftWithKey {
       writeln!(&mut gnuplot, "set key on").unwrap();
@@ -95,6 +95,7 @@ impl<T> Drop for Benchmarker<T> {
     }
     writeln!(&mut gnuplot, "set xrange [1:32]").unwrap();
     writeln!(&mut gnuplot, "set xtics (1, 4, 8, 12, 16, 20, 24, 28, 32)").unwrap();
+    writeln!(&mut gnuplot, "set xlabel \"Threads\"").unwrap();
     writeln!(&mut gnuplot, "set yrange [0:18]").unwrap();
     if self.chart_style == ChartStyle::Right {
       writeln!(&mut gnuplot, "set format y \"\"").unwrap();
