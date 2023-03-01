@@ -155,7 +155,7 @@ impl<'a> Workers<'a> {
 
   // Calls the work function of a task, and calls end_task afterwards
   fn call_task(&self, task_shared: epoch::Shared<TaskObject>, task: &TaskObject, signal: EmptySignal, first_index: u32) {
-    (task.function)(self, unsafe { &*Task::ptr_data(task_shared.as_raw()) }, LoopArguments{ workstealing_size: task.work_size, workstealing_index: task.counters.work_index(), empty_signal: signal, first_index });
+    (task.function)(self, unsafe { &*Task::ptr_data(task_shared.as_raw()) }, LoopArguments{ work_size: task.work_size, work_index: task.counters.work_index(), empty_signal: signal, first_index });
     self.end_task(task_shared, task);
   }
 

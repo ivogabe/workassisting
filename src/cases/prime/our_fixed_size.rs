@@ -1,7 +1,7 @@
 use core::sync::atomic::{Ordering, AtomicU32};
 use crate::core::worker::*;
 use crate::core::task::*;
-use crate::core::workstealing_loop::*;
+use crate::core::workassisting_loop::*;
 use crate::loop_fixed_size;
 use crate::cases::prime;
 
@@ -18,7 +18,7 @@ pub fn create_task(counter: &AtomicU32, first: u64, length: u64) -> Task {
 fn go(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
   let mut local_count = 0;
 
-  workstealing_loop!(loop_arguments, |block_index| {
+  workassisting_loop!(loop_arguments, |block_index| {
     let mut local_local_count = 0;
     loop_fixed_size!(number in
       data.first + block_index as u64 * prime::BLOCK_SIZE,

@@ -36,7 +36,7 @@ impl Task {
     function: fn(workers: &Workers, data: &T, loop_arguments: LoopArguments) -> (),
     continuation: fn(workers: &Workers, data: &T) -> (),
     data: T,
-    workstealing_size: u32
+    work_size: u32
   ) -> Task {
     let layout_task = Layout::new::<TaskObject>();
     let layout_data = Layout::new::<T>();
@@ -51,7 +51,7 @@ impl Task {
         function: mem::transmute(function),
         continuation: mem::transmute(continuation),
         data_offset,
-        work_size: workstealing_size,
+        work_size,
         counters: Counters::new(1, 1),
         layout
       };
@@ -138,8 +138,8 @@ fn no_work(_workers: &Workers, _data: &(), _loop_arguments: LoopArguments) {
 }
 
 pub struct LoopArguments<'a> {
-  pub workstealing_size: u32,
-  pub workstealing_index: &'a AtomicU32,
+  pub work_size: u32,
+  pub work_index: &'a AtomicU32,
   pub empty_signal: EmptySignal<'a>,
   pub first_index: u32,
 }
@@ -153,7 +153,7 @@ const COUNTER_IDX_WORK: usize = 1 - COUNTER_IDX_THREADS;
 
 pub union Counters {
   // In the 32 most significant bits, we store the number of active threads.
-  // In the 32 least significant bits, we store the index of the next workstealing item.
+  // In the 32 least significant bits, we store the index of the next work item.
   //
   // Items in a union need to implement Copy, which Atomics do not have.
   // We wrap it in ManuallyDrop as a work-around.

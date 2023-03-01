@@ -2,7 +2,7 @@ use core::sync::atomic::{Ordering, AtomicU32, AtomicU64};
 use num_format::{Locale, ToFormattedString};
 use crate::core::worker::*;
 use crate::core::task::*;
-use crate::core::workstealing_loop::*;
+use crate::core::workassisting_loop::*;
 use crate::specialize_if;
 use crate::utils::array::alloc_undef_u32_array;
 use crate::utils::benchmark::ChartStyle;
@@ -85,7 +85,7 @@ enum Kind<'a> {
 }
 
 fn reset_run(_workers: &Workers, data: &Reset, loop_arguments: LoopArguments) {
-  workstealing_loop!(loop_arguments, |block_index| {
+  workassisting_loop!(loop_arguments, |block_index| {
     for index in block_index as usize * BLOCK_SIZE .. ((block_index as usize + 1) * BLOCK_SIZE).min(data.array.len()) {
       data.array[index as usize].store(random(index as u64), Ordering::Relaxed);
     }

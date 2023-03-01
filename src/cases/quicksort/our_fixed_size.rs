@@ -6,7 +6,7 @@
 use core::sync::atomic::{Ordering, AtomicU32, AtomicU64};
 use crate::cases::quicksort::parallel_partition_block_specialized;
 use crate::core::worker::*;
-use crate::core::workstealing_loop::*;
+use crate::core::workassisting_loop::*;
 use crate::core::task::*;
 
 use crate::cases::quicksort::{SEQUENTIAL_CUTOFF, DATAPAR_CUTOFF, BLOCK_SIZE};
@@ -72,7 +72,7 @@ pub fn create_task<'a>(pending_tasks: &'a AtomicU64, input: &'a [AtomicU32], out
 fn partition_run(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
   let pivot = data.input[0].load(Ordering::Relaxed);
 
-  workstealing_loop!(loop_arguments, |block_index| {
+  workassisting_loop!(loop_arguments, |block_index| {
     parallel_partition_block_specialized(data.input, data.output, pivot, &data.counters, block_index as usize);
   });
 }

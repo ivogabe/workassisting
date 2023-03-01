@@ -1,7 +1,7 @@
 use core::sync::atomic::{Ordering, AtomicU64};
 use crate::core::worker::*;
 use crate::core::task::*;
-use crate::core::workstealing_loop::*;
+use crate::core::workassisting_loop::*;
 use crate::utils::loops::*;
 use crate::cases::sum_function;
 
@@ -21,7 +21,7 @@ fn work(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
   let first = data.first;
   let length = data.length;
   let counter = data.counter;
-  workstealing_loop!(loop_arguments, |block_index| {
+  workassisting_loop!(loop_arguments, |block_index| {
     let from = first + block_index as u64 * sum_function::BLOCK_SIZE;
     let to = from + sum_function::BLOCK_SIZE;
 
