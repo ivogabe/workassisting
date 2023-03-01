@@ -1,9 +1,10 @@
 set title "Primes (1 .. 8,388,609)"
-set terminal pdf size 2.6,2.43
+set terminal pdf size 2.6,2.6
 set output "./results/Primes_1_.._8,388,609.pdf"
 set key off
 set xrange [1:32]
 set xtics (1, 4, 8, 12, 16, 20, 24, 28, 32)
+set xlabel "Threads"
 set yrange [0:18]
 set ylabel "Speedup"
 plot './results/Primes_1_.._8,388,609.dat' using 1:2 title "Rayon" ls 1 lw 1 pointsize 0.6 with linespoints, \

@@ -1,11 +1,12 @@
 set title "Sum function (n = 134,218,962)"
-set terminal pdf size 2.6,2.43
+set terminal pdf size 2.3,2.6
 set output "./results/Sum_function_n___134,218,962.pdf"
 set key off
 set xrange [1:32]
 set xtics (1, 4, 8, 12, 16, 20, 24, 28, 32)
-set yrange [0:18]
-set ylabel "Speedup"
+set xlabel "Threads"
+set yrange [0:17]
+set format y ""
 plot './results/Sum_function_n___134,218,962.dat' using 1:2 title "Rayon" ls 1 lw 1 pointsize 0.6 with linespoints, \
   './results/Sum_function_n___134,218,962.dat' using 1:3 title "Naive" ls 2 lw 1 pointsize 0.6 with linespoints, \
   './results/Sum_function_n___134,218,962.dat' using 1:4 title "Naive (pinned)" ls 3 lw 1 pointsize 0.6 with linespoints, \
