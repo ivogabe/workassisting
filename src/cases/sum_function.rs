@@ -13,7 +13,7 @@ pub const BLOCK_SIZE: u64 = 2048 * 2;
 
 pub const START: u64 = 1024 * 1024 * 1024;
 
-pub fn run() {
+pub fn run(open_mp_enabled: bool) {
   for count in [1024 * 1024 * 32 + 1234, 1024 * 1024 * 128 + 1234, 1024 * 1024 * 1024 + 1234] {
     let name = "Sum function (n = ".to_owned() + &(count).to_formatted_string(&Locale::en) + ")";
     benchmark(
@@ -26,6 +26,8 @@ pub fn run() {
       .work_stealing(|thread_count| {
         deque::sum(START, count, thread_count)
       })
+      .open_mp(open_mp_enabled, "OpenMP (static)", 6, "sum-function-static", false, count as usize, None)
+      .open_mp(open_mp_enabled, "OpenMP (dynamic)", 7, "sum-function-dynamic", false, count as usize, None)
       .our(|thread_count| {
         let counter = AtomicU64::new(0);
         let task = our::create_task(&counter, START, count);

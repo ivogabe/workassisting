@@ -19,13 +19,13 @@ pub const BLOCK_SIZE: usize = 1024;
 pub const DATAPAR_CUTOFF: usize = 1024 * 32;
 pub const SEQUENTIAL_CUTOFF: usize = 1024 * 8;
 
-pub fn run() {
-  run_on(1024 * 1024);
-  run_on(1024 * 1024 * 16);
-  run_on(1024 * 1024 * 64);
+pub fn run(open_mp_enabled: bool) {
+  run_on(open_mp_enabled, 1024 * 1024);
+  run_on(open_mp_enabled, 1024 * 1024 * 16);
+  run_on(open_mp_enabled, 1024 * 1024 * 64);
 }
 
-fn run_on(size: usize) {
+fn run_on(open_mp_enabled: bool, size: usize) {
   let array1 = unsafe { alloc_undef_u32_array(size) };
   let array2 = unsafe { alloc_undef_u32_array(size) };
   let name = "Sort (n = ".to_owned() + &size.to_formatted_string(&Locale::en) + ")";
@@ -44,6 +44,8 @@ fn run_on(size: usize) {
     deque_parallel_partition::reset_and_sort(&array1, &array2, thread_count);
     output(&array2)
   })
+  .open_mp(open_mp_enabled, "OpenMP (no nested parallelism)", 6, "quicksort", false, size, None)
+  .open_mp(open_mp_enabled, "OpenMP (nested)", 7, "quicksort", true, size, None)
   .our(|thread_count| {
     let pending_tasks = AtomicU64::new(0);
     Workers::run(thread_count, create_task_reset(&array1, &pending_tasks, Kind::DataParallel(&array2, false)));
@@ -139,9 +141,9 @@ pub fn parallel_partition_block(input: &[AtomicU32], output: &[AtomicU32], pivot
       right_count += 1;
     }
   }
-  let counters = counters.fetch_add((right_count << 32) | left_count, Ordering::Relaxed);
-  let mut left_offset = (counters & 0xFFFFFFFF) as usize;
-  let mut right_offset = input.len() - 1 - (counters >> 32) as usize;
+  let counters_value = counters.fetch_add((right_count << 32) | left_count, Ordering::Relaxed);
+  let mut left_offset = (counters_value & 0xFFFFFFFF) as usize;
+  let mut right_offset = input.len() - 1 - (counters_value >> 32) as usize;
   for i in 0 .. end - start {
     let destination;
     if values[i] < pivot {
@@ -172,9 +174,9 @@ pub fn parallel_partition_block_specialized(input: &[AtomicU32], output: &[Atomi
         right_count += 1;
       }
     }
-    let counters = counters.fetch_add((right_count << 32) | left_count, Ordering::Relaxed);
-    let mut left_offset = (counters & 0xFFFFFFFF) as usize;
-    let mut right_offset = input.len() - 1 - (counters >> 32) as usize;
+    let counters_value = counters.fetch_add((right_count << 32) | left_count, Ordering::Relaxed);
+    let mut left_offset = (counters_value & 0xFFFFFFFF) as usize;
+    let mut right_offset = input.len() - 1 - (counters_value >> 32) as usize;
     for i in 0 .. end - start {
       let destination;
       if values[i] < pivot {

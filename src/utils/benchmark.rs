@@ -3,6 +3,9 @@ use std::time;
 use std::fs::File;
 use std::io::{prelude::*, BufWriter};
 use crate::utils;
+use crate::utils::thread_pinning::AFFINITY_MAPPING;
+
+const THREAD_COUNTS: [usize; 14] = [1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32];
 
 pub struct Benchmarker<T> {
   chart_style: ChartStyle,
@@ -28,6 +31,21 @@ pub fn benchmark<T: Debug + Eq, Ref: FnMut() -> T>(chart_style: ChartStyle, name
 }
 
 impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
+  pub fn sequential<Seq: FnMut() -> T>(self, name: &str, sequential: Seq) -> Self {
+    let (value, time) = time(50, sequential);
+    assert_eq!(self.expected, value);
+
+    let relative = self.reference_time as f32 / time as f32;
+    if name.len() <= 12 {
+      println!("{:12} {} ms ({:.2}x)", name, time / 1000, relative);
+    } else {
+      println!("{}", name);
+      println!("{:12} {} ms ({:.2}x)", "", time / 1000, relative);
+    }
+    // self.output.push((name.to_owned(), vec![relative]));
+    self
+  }
+
   pub fn rayon<Par: FnMut() -> T + Sync + Send>(self, label: Option<&str>, mut parallel: Par) -> Self {
     let string;
     let name = if let Some(l) = label {
@@ -42,16 +60,16 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
   }
 
   pub fn naive_parallel<Par: Fn(usize, bool) -> T>(self, parallel: Par) -> Self {
-    self.parallel("Naive", 2, false, |thread_count| parallel(thread_count, false))
-      .parallel("Naive (pinned)", 3, false, |thread_count| parallel(thread_count, true))
+    self.parallel("Static", 2, false, |thread_count| parallel(thread_count, false))
+      .parallel("Static (pinned)", 3, false, |thread_count| parallel(thread_count, true))
   }
 
   pub fn work_stealing<Par: FnMut(usize) -> T>(self, parallel: Par) -> Self {
-    self.parallel("Work stealing", 5, false, parallel)
+    self.parallel("Work stealing", 8, false, parallel)
   }
 
   pub fn our<Par: FnMut(usize) -> T>(self, parallel: Par) -> Self {
-    self.parallel("Our", 6, true, parallel)
+    self.parallel("Our", 5, true, parallel)
   }
 
   pub fn our_fixed_size<Par: FnMut(usize) -> T>(self, parallel: Par) -> Self {
@@ -61,7 +79,7 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
   pub fn parallel<Par: FnMut(usize) -> T>(mut self, name: &str, chart_line_style: u32, our: bool, mut parallel: Par) -> Self {
     println!("{}", name);
     let mut results = vec![];
-    for thread_count in [1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32] {
+    for thread_count in THREAD_COUNTS {
       if thread_count > affinity::get_core_num() {
         break;
       }
@@ -73,6 +91,45 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
       println!("  {:02} threads {} ms ({:.2}x)", thread_count, time / 1000, relative);
     }
     self.output.push((name.to_owned(), chart_line_style, our, results));
+    self
+  }
+
+  pub fn open_mp(mut self, cpp_enabled: bool, name: &str, chart_line_style: u32, cpp_name: &str, nested: bool, size1: usize, size2: Option<usize>) -> Self {
+    if !cpp_enabled { return self; }
+
+    println!("{}", name);
+    let mut results = vec![];
+    for thread_count in THREAD_COUNTS {
+      let affinity = (0 .. thread_count).map(|i| 1 << AFFINITY_MAPPING[i]).fold(0, |a, b| a | b);
+
+      let mut command = std::process::Command::new("taskset");
+      command
+        .env("OMP_NUM_THREADS", thread_count.to_string())
+        .arg(format!("{:X}", affinity))
+        .arg("./reference-openmp/build/main")
+        .arg(cpp_name)
+        .arg(size1.to_string());
+
+      if let Some(s) = size2 {
+        command.arg(s.to_string());
+      }
+
+      if nested {
+        command.env("OMP_NESTED", "True");
+      }
+
+      let child = command
+        .output()
+        .expect("Reference sequential C++ implementation failed");
+
+      let time_str = String::from_utf8_lossy(&child.stdout);
+      let time: u64 = time_str.trim().parse().expect(&("Unexpected output from reference C++ program: ".to_owned() + &time_str));
+      let relative = self.reference_time as f32 / time as f32;
+      results.push(relative);
+      println!("  {:02} threads {} ms ({:.2}x)", thread_count, time / 1000, relative);
+    }
+    self.output.push((name.to_owned(), chart_line_style, false, results));
+
     self
   }
 }
@@ -124,7 +181,7 @@ impl<T> Drop for Benchmarker<T> {
     }
     write!(&mut writer, "\n").unwrap();
 
-    for (idx, thread_count) in [1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32].iter().enumerate() {
+    for (idx, thread_count) in THREAD_COUNTS.iter().enumerate() {
       write!(&mut writer, "{}", thread_count).unwrap();
       for result in &self.output {
         if idx < result.3.len() {

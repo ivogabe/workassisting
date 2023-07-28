@@ -3,9 +3,10 @@ mod cases;
 mod utils;
 
 fn main() {
-  cases::quicksort::run();
-  cases::prime::run();
-  cases::sum_array::run();
-  cases::sum_function::run();
+  let open_mp_enabled = true;
+  cases::quicksort::run(open_mp_enabled);
+  cases::prime::run(open_mp_enabled);
+  cases::sum_array::run(open_mp_enabled);
+  cases::sum_function::run(open_mp_enabled);
 }
 
