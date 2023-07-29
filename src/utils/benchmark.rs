@@ -144,6 +144,47 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
 
     self
   }
+
+  pub fn open_mp_lud(mut self, openmp_enabled: bool, name: &str, chart_line_style: u32, filename: &str, m: usize) -> Self {
+    if !openmp_enabled { return self; }
+
+    println!("{}", name);
+    let mut results = vec![];
+    for thread_count in THREAD_COUNTS {
+      let affinity = (0 .. thread_count).map(|i| 1 << AFFINITY_MAPPING[i]).fold(0, |a, b| a | b);
+
+      let mut total_time = 0.0;
+      let runs = 50;
+      for _ in 0 .. runs {
+        let mut command = std::process::Command::new("taskset");
+        command
+          .arg(format!("{:X}", affinity))
+          .arg("./rodinia_3.1/openmp/lud/omp/lud_omp")
+          .arg("-i")
+          .arg(filename)
+          .arg("-m")
+          .arg(m.to_string())
+          .arg("-n")
+          .arg(((thread_count + m - 1) / m).to_string());
+
+        let child = command
+          .output()
+          .expect("Reference sequential C++ implementation failed");
+
+        let output = String::from_utf8_lossy(&child.stdout);
+        let time_str = output.split(' ').filter(|s| s.trim() != "").last().expect("Empty output from OpenMP program");
+        let time_f: f32 = time_str.trim().parse().expect(&("Unexpected output from reference C++ program: ".to_owned() + &time_str));
+        total_time += time_f * 1000.0;
+      }
+      let time = (total_time / runs as f32) as u64;
+      let relative = self.reference_time as f32 / time as f32;
+      results.push(relative);
+      println!("  {:02} threads {} ms ({:.2}x)", thread_count, time / 1000, relative);
+    }
+    self.output.push((name.to_owned(), chart_line_style, false, results));
+
+    self
+  }
 }
 
 impl<T> Drop for Benchmarker<T> {

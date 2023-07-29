@@ -133,18 +133,22 @@ main ( int argc, char *argv[] )
 
   // Warm-up run
 
-  /*omp_set_max_active_levels(2);
-  omp_set_num_threads(matrix_count);
-  #pragma omp parallel for
-  for (int i = 0; i < matrix_count; i++) {
-    omp_set_num_threads(omp_num_threads);
-    lud_omp(matices[i], matrix_dim);
+  if (matrix_count == 1) {
+    lud_omp(matrices[0], matrix_dim);
+  } else {
+    omp_set_max_active_levels(2);
+    omp_set_num_threads(matrix_count);
+    #pragma omp parallel for
+    for (int i = 0; i < matrix_count; i++) {
+      omp_set_num_threads(omp_num_threads);
+      lud_omp(matrices[i], matrix_dim);
+    }
   }
 
   for (int i = 0; i < matrix_count; i++) {
     free(matrices[i]);
     matrix_duplicate(m, &matrices[i], matrix_dim);
-  }*/
+  }
 
   if (matrix_count == 1) {
     stopwatch_start(&sw);
