@@ -160,16 +160,10 @@ main ( int argc, char *argv[] )
 
     stopwatch_start(&sw);
 
-    #pragma omp parallel
-    #pragma omp single
-    {
+    #pragma omp parallel for
+    for (int i = 0; i < matrix_count; i++) {
       omp_set_num_threads(omp_num_threads);
-      for (int i = 0; i < matrix_count; i++) {
-        #pragma omp task
-        lud_omp(matrices[i], matrix_dim);
-      }
-
-      #pragma omp taskwait
+      lud_omp(matrices[i], matrix_dim);
     }
 
     stopwatch_stop(&sw);
