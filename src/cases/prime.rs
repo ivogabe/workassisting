@@ -1,8 +1,7 @@
 use core::sync::atomic::{Ordering, AtomicU32};
 use rayon::prelude::*;
 use crate::core::worker::*;
-use crate::utils::benchmark::ChartStyle;
-use crate::utils::benchmark::benchmark;
+use crate::utils::benchmark::{benchmark, ChartStyle, Nesting};
 use crate::utils::thread_pinning::AFFINITY_MAPPING;
 use num_format::{Locale, ToFormattedString};
 
@@ -31,8 +30,8 @@ fn run_on(open_mp_enabled: bool, style: ChartStyle, start: u64, count: u64) {
   .rayon(None, || reference_parallel(start, count))
   .naive_parallel(|thread_count, pinned| naive(start, count, thread_count, pinned))
   .work_stealing(|thread_count| deque::count_primes(start, count, thread_count))
-  .open_mp(open_mp_enabled, "OpenMP (static)", 6, "prime-static", false, start as usize, Some((start + count) as usize))
-  .open_mp(open_mp_enabled, "OpenMP (dynamic)", 7, "prime-dynamic", false, start as usize, Some((start + count) as usize))
+  .open_mp(open_mp_enabled, "OpenMP (static)", 6, "prime-static", Nesting::Flat, start as usize, Some((start + count) as usize))
+  .open_mp(open_mp_enabled, "OpenMP (dynamic)", 7, "prime-dynamic", Nesting::Flat, start as usize, Some((start + count) as usize))
   .our(|thread_count| {
     let counter = AtomicU32::new(0);
     let task = our::create_task(&counter, start, count);

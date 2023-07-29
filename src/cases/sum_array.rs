@@ -1,7 +1,7 @@
 use core::sync::atomic::{Ordering, AtomicU64};
 use rayon::prelude::*;
 use crate::core::worker::*;
-use crate::utils::benchmark::{benchmark, ChartStyle};
+use crate::utils::benchmark::{benchmark, ChartStyle, Nesting};
 use crate::utils::thread_pinning::AFFINITY_MAPPING;
 use num_format::{Locale, ToFormattedString};
 
@@ -16,7 +16,7 @@ pub const START: u64 = 1024 * 1024 * 1024;
 pub fn run(open_mp_enabled: bool) {
   for count in [1024 * 1024 * 32 + 1234, 1024 * 1024 * 128 + 1234, 1024 * 1024 * 1024 + 1234] {
     let name = "Sum array (n = ".to_owned() + &(count).to_formatted_string(&Locale::en) + ")";
-    let array: Vec<u64> = (START .. START + count).map(|number| random(number) as u64).collect();
+    let array: Vec<u64> = (START .. START + count).map(|number| crate::cases::sum_function::random(number) as u64).collect();
 
     benchmark(
       ChartStyle::LeftWithKey,
@@ -28,8 +28,8 @@ pub fn run(open_mp_enabled: bool) {
       .work_stealing(|thread_count| {
         deque::sum(&array, thread_count)
       })
-      .open_mp(open_mp_enabled, "OpenMP (static)", 6, "sum-array-static", false, count as usize, None)
-      .open_mp(open_mp_enabled, "OpenMP (dynamic)", 7, "sum-array-dynamic", false, count as usize, None)
+      .open_mp(open_mp_enabled, "OpenMP (static)", 6, "sum-array-static", Nesting::Flat, count as usize, None)
+      .open_mp(open_mp_enabled, "OpenMP (dynamic)", 7, "sum-array-dynamic", Nesting::Flat, count as usize, None)
       .our(|thread_count| {
         let counter = AtomicU64::new(0);
         let task = our::create_task(&counter, &array);
@@ -43,14 +43,6 @@ pub fn run(open_mp_enabled: bool) {
         counter.load(Ordering::Acquire)
       });
   }
-}
-
-#[inline(always)]
-pub fn random(mut seed: u64) -> u32 {
-  seed ^= seed << 13;
-  seed ^= seed >> 17;
-  seed ^= seed << 5;
-  (seed & 0xFFFFFFF) as u32
 }
 
 pub fn reference_sequential_single(array: &[u64]) -> u64 {

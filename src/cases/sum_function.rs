@@ -1,7 +1,7 @@
 use core::sync::atomic::{Ordering, AtomicU64};
 use rayon::prelude::*;
 use crate::core::worker::*;
-use crate::utils::benchmark::{benchmark, ChartStyle};
+use crate::utils::benchmark::{benchmark, ChartStyle, Nesting};
 use crate::utils::thread_pinning::AFFINITY_MAPPING;
 use num_format::{Locale, ToFormattedString};
 
@@ -26,8 +26,8 @@ pub fn run(open_mp_enabled: bool) {
       .work_stealing(|thread_count| {
         deque::sum(START, count, thread_count)
       })
-      .open_mp(open_mp_enabled, "OpenMP (static)", 6, "sum-function-static", false, count as usize, None)
-      .open_mp(open_mp_enabled, "OpenMP (dynamic)", 7, "sum-function-dynamic", false, count as usize, None)
+      .open_mp(open_mp_enabled, "OpenMP (static)", 6, "sum-function-static", Nesting::Flat, count as usize, None)
+      .open_mp(open_mp_enabled, "OpenMP (dynamic)", 7, "sum-function-dynamic", Nesting::Flat, count as usize, None)
       .our(|thread_count| {
         let counter = AtomicU64::new(0);
         let task = our::create_task(&counter, START, count);
@@ -48,6 +48,11 @@ pub fn random(mut seed: u64) -> u32 {
   seed ^= seed << 13;
   seed ^= seed >> 17;
   seed ^= seed << 5;
+  seed = seed.wrapping_mul(seed);
+  seed += 9023;
+  seed = (seed as f64).sqrt() as u64;
+  seed ^= seed >> 11;
+  seed ^= seed << 9;
   (seed & 0xFFFFFFF) as u32
 }
 

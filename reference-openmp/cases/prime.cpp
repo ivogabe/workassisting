@@ -32,6 +32,7 @@ uint32_t case_primes_dynamic(uint64_t from, uint64_t to) {
     }
     count += local_count;
   }
+  fprintf(stderr, "%d\n", (uint32_t) count);
   return (uint32_t) count;
 }
 
@@ -48,5 +49,6 @@ uint32_t case_primes_static(uint64_t from, uint64_t to) {
     }
     count += local_count;
   }
+  fprintf(stderr, "%d\n", (uint32_t) count);
   return (uint32_t) count;
 }

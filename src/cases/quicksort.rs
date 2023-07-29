@@ -5,8 +5,7 @@ use crate::core::task::*;
 use crate::core::workassisting_loop::*;
 use crate::specialize_if;
 use crate::utils::array::alloc_undef_u32_array;
-use crate::utils::benchmark::ChartStyle;
-use crate::utils::benchmark::benchmark;
+use crate::utils::benchmark::{benchmark, ChartStyle, Nesting};
 
 pub mod our;
 pub mod our_fixed_size;
@@ -44,8 +43,9 @@ fn run_on(open_mp_enabled: bool, size: usize) {
     deque_parallel_partition::reset_and_sort(&array1, &array2, thread_count);
     output(&array2)
   })
-  .open_mp(open_mp_enabled, "OpenMP (no nested parallelism)", 6, "quicksort", false, size, None)
-  .open_mp(open_mp_enabled, "OpenMP (nested)", 7, "quicksort", true, size, None)
+  .open_mp(open_mp_enabled, "OpenMP (no nested parallelism)", 6, "quicksort", Nesting::Flat, size, None)
+  .open_mp(open_mp_enabled, "OpenMP (split threads)", 7, "quicksort", Nesting::NestedSplit, size, None)
+  .open_mp(open_mp_enabled, "OpenMP (oversaturate)", 8, "quicksort", Nesting::NestedOversaturate, size, None)
   .our(|thread_count| {
     let pending_tasks = AtomicU64::new(0);
     Workers::run(thread_count, create_task_reset(&array1, &pending_tasks, Kind::DataParallel(&array2, false)));

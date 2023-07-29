@@ -10,11 +10,11 @@
 uint32_t case_primes_dynamic(uint64_t, uint64_t);
 uint32_t case_primes_static(uint64_t, uint64_t);
 
-uint64_t* sum_create_input(int size);
-uint64_t case_sum_array_dynamic(uint64_t*, int);
-uint64_t case_sum_array_static(uint64_t*, int);
-uint64_t case_sum_function_dynamic(int);
-uint64_t case_sum_function_static(int);
+uint64_t* sum_create_input(uint64_t size);
+uint64_t case_sum_array_dynamic(uint64_t*, uint64_t);
+uint64_t case_sum_array_static(uint64_t*, uint64_t);
+uint64_t case_sum_function_dynamic(uint64_t);
+uint64_t case_sum_function_static(uint64_t);
 
 void case_quicksort(uint32_t*, uint32_t*, int);
 

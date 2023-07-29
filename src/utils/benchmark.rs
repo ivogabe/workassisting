@@ -22,6 +22,13 @@ pub enum ChartStyle {
   Right
 }
 
+#[derive(PartialEq, Eq, Copy, Clone)]
+pub enum Nesting {
+  NestedOversaturate,
+  NestedSplit,
+  Flat
+}
+
 pub fn benchmark<T: Debug + Eq, Ref: FnMut() -> T>(chart_style: ChartStyle, name: &str, reference: Ref) -> Benchmarker<T> {
   println!("");
   println!("Benchmark {}", name);
@@ -94,17 +101,22 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
     self
   }
 
-  pub fn open_mp(mut self, cpp_enabled: bool, name: &str, chart_line_style: u32, cpp_name: &str, nested: bool, size1: usize, size2: Option<usize>) -> Self {
-    if !cpp_enabled { return self; }
+  pub fn open_mp(mut self, openmp_enabled: bool, name: &str, chart_line_style: u32, cpp_name: &str, nesting: Nesting, size1: usize, size2: Option<usize>) -> Self {
+    if !openmp_enabled { return self; }
 
     println!("{}", name);
     let mut results = vec![];
     for thread_count in THREAD_COUNTS {
       let affinity = (0 .. thread_count).map(|i| 1 << AFFINITY_MAPPING[i]).fold(0, |a, b| a | b);
 
+      let omp_threads = match nesting {
+        Nesting::NestedSplit => (thread_count as f32).sqrt().ceil() as usize,
+        _ => thread_count
+      };
+
       let mut command = std::process::Command::new("taskset");
       command
-        .env("OMP_NUM_THREADS", thread_count.to_string())
+        .env("OMP_NUM_THREADS", omp_threads.to_string())
         .arg(format!("{:X}", affinity))
         .arg("./reference-openmp/build/main")
         .arg(cpp_name)
@@ -114,7 +126,7 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
         command.arg(s.to_string());
       }
 
-      if nested {
+      if nesting != Nesting::Flat {
         command.env("OMP_NESTED", "True");
       }
 
