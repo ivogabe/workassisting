@@ -90,18 +90,20 @@ impl<'a> Workers<'a> {
     let mut other_index = thread_index;
     let increment = if thread_index % 2 == 0 { 1 } else { self.worker_count - 1 };
 
-    let guard = &epoch::pin();
+    let guard = epoch::pin();
     loop {
       other_index = (other_index + increment) % self.worker_count;
       if other_index == thread_index {
         break;
       }
 
-      let activity = self.activities[other_index].load(Ordering::Acquire, guard);
+      let activity = self.activities[other_index].load(Ordering::Acquire, &guard);
       if activity.is_null() { continue; }
 
       // We can assist this thread
-      let task = unsafe { activity.deref() };
+      // Note that `task` gets a different lifetime than `guard` and `activitity`.
+      // This is safe as the reference count will assure that the object stays live.
+      let task = unsafe { &*activity.as_raw() };
       let mut signal = EmptySignal{ pointer: &self.activities[other_index], old: task, state: EmptySignalState::Assist };
 
       // Mark that this thread is working on the task and claim the first blocks
@@ -121,11 +123,10 @@ impl<'a> Workers<'a> {
       // Early out.
       if current_index >= task.work_size {
         signal.task_empty();
-        self.end_task(activity, task);
+        self.end_task(task);
         break;
       }
-
-      self.call_task(activity, task, signal, current_index);
+      self.call_task(task, signal, current_index);
       break;
     }
   }
@@ -150,25 +151,25 @@ impl<'a> Workers<'a> {
     self.activities[thread_index].store(task_shared, Ordering::Release);
 
     let signal = EmptySignal{ pointer: &self.activities[thread_index], old: task, state: EmptySignalState::Main };
-    self.call_task(task_shared, task, signal, 0);
+    self.call_task(task, signal, 0);
   }
 
   // Calls the work function of a task, and calls end_task afterwards
-  fn call_task(&self, task_shared: epoch::Shared<TaskObject>, task: &TaskObject, signal: EmptySignal, first_index: u32) {
-    (task.function)(self, unsafe { &*Task::ptr_data(task_shared.as_raw()) }, LoopArguments{ work_size: task.work_size, work_index: task.counters.work_index(), empty_signal: signal, first_index });
-    self.end_task(task_shared, task);
+  fn call_task(&self, task: &TaskObject, signal: EmptySignal, first_index: u32) {
+    (task.function)(self, unsafe { &*Task::ptr_data(&*task) }, LoopArguments{ work_size: task.work_size, work_index: task.counters.work_index(), empty_signal: signal, first_index });
+    self.end_task(task);
   }
 
-  fn end_task(&self, task_shared: epoch::Shared<TaskObject>, task: &TaskObject) {
+  fn end_task(&self, task: &TaskObject) {
     // Check whether there is no pending work (that is claimed, but not finished yet).
     let remaining = task.counters.active_threads().fetch_sub(1, Ordering::AcqRel) - 1;
     if remaining == 0 {
       // Only one thread will decrement active_threads to zero.
       // That thread will call the continuation of the task.
-      (task.continuation)(self, unsafe { &*Task::ptr_data(task_shared.as_raw()) });
+      (task.continuation)(self, unsafe { &*Task::ptr_data(&*task) });
       let guard = epoch::pin();
       // At the end of this epoch, we can take unique ownership of the TaskObject
-      let task = unsafe { Task::from_raw(task_shared.as_raw() as *mut TaskObject) };
+      let task = unsafe { Task::from_raw(&*task as *const TaskObject as *mut TaskObject) };
       guard.defer(move || drop(task));
     }
   }

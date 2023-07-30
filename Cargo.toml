@@ -1,3 +1,5 @@
+cargo-features = ["profile-rustflags"]
+
 [package]
 name = "workassisting"
 version = "0.1.0"
@@ -13,3 +15,4 @@ num-format = "0.4.4"
 
 [profile.dev]
 opt-level = 3
+rustflags = ["-C", "target-cpu=native"]
