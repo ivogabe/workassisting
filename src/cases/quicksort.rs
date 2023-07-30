@@ -87,8 +87,8 @@ enum Kind<'a> {
 }
 
 fn reset_run(_workers: &Workers, data: &Reset, loop_arguments: LoopArguments) {
-  workassisting_loop!(loop_arguments, |block_index| {
-    for index in block_index as usize * BLOCK_SIZE .. ((block_index as usize + 1) * BLOCK_SIZE).min(data.array.len()) {
+  workassisting_loop!(loop_arguments, |chunk_index| {
+    for index in chunk_index as usize * BLOCK_SIZE .. ((chunk_index as usize + 1) * BLOCK_SIZE).min(data.array.len()) {
       data.array[index as usize].store(random(index as u64), Ordering::Relaxed);
     }
   });
@@ -125,10 +125,10 @@ fn reference_sequential_single(array: &[AtomicU32]) -> u64 {
 }
 
 #[inline(always)]
-pub fn parallel_partition_block(input: &[AtomicU32], output: &[AtomicU32], pivot: u32, counters: &AtomicU64, block_index: usize) {
+pub fn parallel_partition_chunk(input: &[AtomicU32], output: &[AtomicU32], pivot: u32, counters: &AtomicU64, chunk_index: usize) {
   // Loop starts at 1, as element 0 is the pivot.
-  let start = 1 + block_index as usize * BLOCK_SIZE ;
-  let end = 1 + ((block_index as usize + 1) * BLOCK_SIZE).min(input.len() - 1);
+  let start = 1 + chunk_index as usize * BLOCK_SIZE ;
+  let end = 1 + ((chunk_index as usize + 1) * BLOCK_SIZE).min(input.len() - 1);
 
   let mut values = [0; BLOCK_SIZE];
   let mut left_count = 0;
@@ -158,9 +158,9 @@ pub fn parallel_partition_block(input: &[AtomicU32], output: &[AtomicU32], pivot
 }
 
 #[inline(always)]
-pub fn parallel_partition_block_specialized(input: &[AtomicU32], output: &[AtomicU32], pivot: u32, counters: &AtomicU64, block_index: usize) {
+pub fn parallel_partition_chunk_specialized(input: &[AtomicU32], output: &[AtomicU32], pivot: u32, counters: &AtomicU64, chunk_index: usize) {
   // Loop starts at 1, as element 0 is the pivot.
-  let start = 1 + block_index as usize * BLOCK_SIZE ;
+  let start = 1 + chunk_index as usize * BLOCK_SIZE ;
 
   specialize_if!(start + BLOCK_SIZE <= input.len(), start + BLOCK_SIZE, input.len(), |end| {
     let mut values = [0; BLOCK_SIZE];

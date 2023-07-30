@@ -17,10 +17,10 @@ pub fn create_task(counter: &AtomicU32, first: u64, length: u64) -> Task {
 fn go(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
   let mut local_count = 0;
 
-  workassisting_loop!(loop_arguments, |block_index| {
+  workassisting_loop!(loop_arguments, |chunk_index| {
     let mut local_local_count = 0;
-    let end = (data.first + (block_index as u64 + 1) * prime::BLOCK_SIZE).min(data.first + data.length);
-    for number in data.first + block_index as u64 * prime::BLOCK_SIZE .. end {
+    let end = (data.first + (chunk_index as u64 + 1) * prime::BLOCK_SIZE).min(data.first + data.length);
+    for number in data.first + chunk_index as u64 * prime::BLOCK_SIZE .. end {
       if prime::is_prime(number) {
         local_local_count += 1;
       }

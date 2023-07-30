@@ -21,8 +21,8 @@ fn work(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
   let first = data.first;
   let length = data.length;
   let counter = data.counter;
-  workassisting_loop!(loop_arguments, |block_index| {
-    let from = first + block_index as u64 * sum_function::BLOCK_SIZE;
+  workassisting_loop!(loop_arguments, |chunk_index| {
+    let from = first + chunk_index as u64 * sum_function::BLOCK_SIZE;
     let to = from + sum_function::BLOCK_SIZE;
 
     let mut local_local_count = 0;

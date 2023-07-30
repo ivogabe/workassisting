@@ -16,18 +16,18 @@ macro_rules! loop_fixed_size {
 }
 pub(crate) use loop_fixed_size;
 
-/// Based on $condition, assigns either $when_true or $when_false to $var and then executes $block.
-/// The code of $block is duplicated, to allow the compiler to specialize the code for the value
+/// Based on $condition, assigns either $when_true or $when_false to $var and then executes $chunk.
+/// The code of $chunk is duplicated, to allow the compiler to specialize the code for the value
 /// of $var.
 #[macro_export]
 macro_rules! specialize_if {
-  ($condition: expr, $when_true: expr, $when_false: expr, |$var: ident| $block: block) => {
+  ($condition: expr, $when_true: expr, $when_false: expr, |$var: ident| $chunk: block) => {
     if $condition {
       let $var = $when_true;
-      $block
+      $chunk
     } else {
       let $var = $when_false;
-      $block
+      $chunk
     }
   }
 }

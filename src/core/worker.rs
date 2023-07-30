@@ -106,7 +106,7 @@ impl<'a> Workers<'a> {
       let task = unsafe { &*activity.as_raw() };
       let mut signal = EmptySignal{ pointer: &self.activities[other_index], old: task, state: EmptySignalState::Assist };
 
-      // Mark that this thread is working on the task and claim the first blocks
+      // Mark that this thread is working on the task and claim the first chunk
       let (old_active_threads, current_index) = task.counters.fetch_add(1, 1, Ordering::Acquire);
 
       if old_active_threads == 0 {

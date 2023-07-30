@@ -28,7 +28,7 @@ fn run_on(open_mp_enabled: bool, style: ChartStyle, start: u64, count: u64) {
     || reference_sequential_single(start, count)
   )
   .rayon(None, || reference_parallel(start, count))
-  .naive_parallel(|thread_count, pinned| naive(start, count, thread_count, pinned))
+  .static_parallel(|thread_count, pinned| static_parallel(start, count, thread_count, pinned))
   .work_stealing(|thread_count| deque::count_primes(start, count, thread_count))
   .open_mp(open_mp_enabled, "OpenMP (static)", 6, "prime-static", Nesting::Flat, start as usize, Some((start + count) as usize))
   .open_mp(open_mp_enabled, "OpenMP (dynamic)", 7, "prime-dynamic", Nesting::Flat, start as usize, Some((start + count) as usize))
@@ -60,7 +60,7 @@ pub fn reference_parallel(start: u64, count: u64) -> u32 {
   (start .. start + count).into_par_iter().map(|x| if is_prime(x) { 1 } else { 0 }).sum()
 }
 
-pub fn naive(start: u64, count: u64, thread_count: usize, pinned: bool) -> u32 {
+pub fn static_parallel(start: u64, count: u64, thread_count: usize, pinned: bool) -> u32 {
   let result = AtomicU32::new(0);
   crossbeam::scope(|s| {
     let result_ref = &result;

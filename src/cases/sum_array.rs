@@ -24,7 +24,7 @@ pub fn run(open_mp_enabled: bool) {
       || reference_sequential_single(&array)
     )
       .rayon(None, || reference_parallel(&array))
-      .naive_parallel(|thread_count, pinned| naive(&array, thread_count, pinned))
+      .static_parallel(|thread_count, pinned| static_parallel(&array, thread_count, pinned))
       .work_stealing(|thread_count| {
         deque::sum(&array, thread_count)
       })
@@ -57,7 +57,7 @@ pub fn reference_parallel(array: &[u64]) -> u64 {
   array.into_par_iter().sum()
 }
 
-pub fn naive(array: &[u64], thread_count: usize, pinned: bool) -> u64 {
+pub fn static_parallel(array: &[u64], thread_count: usize, pinned: bool) -> u64 {
   let result = AtomicU64::new(0);
   crossbeam::scope(|s| {
     let result_ref = &result;

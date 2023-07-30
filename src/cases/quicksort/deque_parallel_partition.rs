@@ -135,7 +135,7 @@ fn run_parallel_partition(worker: Worker, data_box: Box<TaskParallelPartition>) 
       worker.push_task(Task::new(run_parallel_partition, Box::new(subtask1)));
     } else {
       task.reference_count.fetch_add(2, Ordering::Relaxed);
-      // Choose the length of subtask1 as a multiple of the block size
+      // Choose the length of subtask1 as a multiple of the chunk size
       let mid = own_end + other / 2 / BLOCK_SIZE * BLOCK_SIZE;
       let subtask1 = TaskParallelPartition{ sort: data.sort, start: own_end, end: mid };
       worker.push_task(Task::new(run_parallel_partition, Box::new(subtask1)));

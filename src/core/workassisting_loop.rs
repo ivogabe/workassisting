@@ -1,21 +1,21 @@
 #[macro_export]
 macro_rules! workassisting_loop {
-  ($loop_arguments_expr: expr, |$block_index: ident| $body: block) => {
+  ($loop_arguments_expr: expr, |$chunk_index: ident| $body: block) => {
     let mut loop_arguments: LoopArguments = $loop_arguments_expr;
     // Claim work
-    let mut block_index = loop_arguments.first_index;
+    let mut chunk_idx = loop_arguments.first_index;
 
-    while block_index < loop_arguments.work_size {
-      if block_index == loop_arguments.work_size - 1 {
+    while chunk_idx < loop_arguments.work_size {
+      if chunk_idx == loop_arguments.work_size - 1 {
         // All work is claimed.
         loop_arguments.empty_signal.task_empty();
       }
 
-      // Copy block_index to an immutable variable, such that a user of this macro cannot mutate it.
-      let $block_index = block_index;
+      // Copy chunk_index to an immutable variable, such that a user of this macro cannot mutate it.
+      let $chunk_index = chunk_idx;
       $body
 
-      block_index = loop_arguments.work_index.fetch_add(1, Ordering::Relaxed);
+      chunk_idx = loop_arguments.work_index.fetch_add(1, Ordering::Relaxed);
     }
     loop_arguments.empty_signal.task_empty();
   };

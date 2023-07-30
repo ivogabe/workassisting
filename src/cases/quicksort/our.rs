@@ -4,7 +4,7 @@
 // - Two sections are sorted in parallel with task parallelism
 
 use core::sync::atomic::{Ordering, AtomicU32, AtomicU64};
-use crate::cases::quicksort::parallel_partition_block;
+use crate::cases::quicksort::parallel_partition_chunk;
 use crate::core::worker::*;
 use crate::core::workassisting_loop::*;
 use crate::core::task::*;
@@ -72,8 +72,8 @@ pub fn create_task<'a>(pending_tasks: &'a AtomicU64, input: &'a [AtomicU32], out
 fn partition_run(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
   let pivot = data.input[0].load(Ordering::Relaxed);
 
-  workassisting_loop!(loop_arguments, |block_index| {
-    parallel_partition_block(data.input, data.output, pivot, &data.counters, block_index as usize);
+  workassisting_loop!(loop_arguments, |chunk_index| {
+    parallel_partition_chunk(data.input, data.output, pivot, &data.counters, chunk_index as usize);
   });
 }
 

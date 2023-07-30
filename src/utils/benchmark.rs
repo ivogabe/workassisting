@@ -66,7 +66,7 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
     )
   }
 
-  pub fn naive_parallel<Par: Fn(usize, bool) -> T>(self, parallel: Par) -> Self {
+  pub fn static_parallel<Par: Fn(usize, bool) -> T>(self, parallel: Par) -> Self {
     self.parallel("Static", 2, false, |thread_count| parallel(thread_count, false))
       .parallel("Static (pinned)", 3, false, |thread_count| parallel(thread_count, true))
   }
