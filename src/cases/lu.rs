@@ -5,10 +5,13 @@ use crate::core::worker::Workers;
 use crate::utils::benchmark::{benchmark, ChartStyle};
 use num_format::{Locale, ToFormattedString};
 
-pub mod tiled;
+pub mod our;
+pub mod workstealing;
 
 pub fn run(openmp_enabled: bool) {
   test();
+  run_on(openmp_enabled, 256, 1);
+  run_on(openmp_enabled, 256, 2);
   run_on(openmp_enabled, 512, 1);
   run_on(openmp_enabled, 512, 2);
   run_on(openmp_enabled, 512, 4);
@@ -20,8 +23,8 @@ pub fn run(openmp_enabled: bool) {
 fn run_on(openmp_enabled: bool, size: usize, matrix_count: usize) {
   let input = parse_input(size);
 
-  let mut matrices: Vec<(SquareMatrix, AtomicU64)> = (0 .. matrix_count).map(|_| {
-    (SquareMatrix::new(size), AtomicU64::new(0))
+  let mut matrices: Vec<(SquareMatrix, AtomicU64, AtomicU64)> = (0 .. matrix_count).map(|_| {
+    (SquareMatrix::new(size), AtomicU64::new(0), AtomicU64::new(0))
   }).collect();
 
   let pending = AtomicU64::new(0);
@@ -33,12 +36,18 @@ fn run_on(openmp_enabled: bool, size: usize, matrix_count: usize) {
       sequential(&mut matrices[i].0);
     }
   })
+  .work_stealing(|thread_count| {
+    for i in 0 .. matrix_count {
+      input.copy_to(&mut matrices[i].0);
+    }
+    workstealing::run(&matrices, &pending, thread_count);
+  })
   .open_mp_lud(openmp_enabled, "OpenMP", 6, &filename(size), matrix_count)
   .our(|thread_count| {
     for i in 0 .. matrix_count {
       input.copy_to(&mut matrices[i].0);
     }
-    Workers::run(thread_count, tiled::create_task(&matrices, &pending));
+    Workers::run(thread_count, our::create_task(&matrices, &pending));
   });
 }
 
@@ -49,10 +58,9 @@ fn test() {
 
   // println!("A = {:?}", matrix);
 
-  let synchronisation_var = AtomicU64::new(0);
   let pending = AtomicU64::new(0);
-  let matrices = vec![(matrix, synchronisation_var)];
-  Workers::run(32, tiled::create_task(&matrices, &pending));
+  let matrices = vec![(matrix, AtomicU64::new(0), AtomicU64::new(0))];
+  Workers::run(32, our::create_task(&matrices, &pending));
 
   let u = matrices[0].0.upper_triangle_with_diagonal();
   // println!("U = {:?}", u);
