@@ -17,9 +17,8 @@ pub struct Benchmarker<T> {
 
 #[derive(PartialEq, Eq, Copy, Clone)]
 pub enum ChartStyle {
-  Left,
-  LeftWithKey,
-  Right
+  WithKey,
+  WithoutKey
 }
 
 #[derive(PartialEq, Eq, Copy, Clone)]
@@ -32,14 +31,14 @@ pub enum Nesting {
 pub fn benchmark<T: Debug + Eq, Ref: FnMut() -> T>(chart_style: ChartStyle, name: &str, reference: Ref) -> Benchmarker<T> {
   println!("");
   println!("Benchmark {}", name);
-  let (expected, reference_time) = time(10, reference);
+  let (expected, reference_time) = time(50, reference);
   println!("Sequential   {} ms", reference_time / 1000);
   Benchmarker{ chart_style, name: name.to_owned(), reference_time, expected, output: vec![] }
 }
 
 impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
   pub fn sequential<Seq: FnMut() -> T>(self, name: &str, sequential: Seq) -> Self {
-    let (value, time) = time(50, sequential);
+    let (value, time) = time(20, sequential);
     assert_eq!(self.expected, value);
 
     let relative = self.reference_time as f32 / time as f32;
@@ -72,11 +71,11 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
   }
 
   pub fn work_stealing<Par: FnMut(usize) -> T>(self, parallel: Par) -> Self {
-    self.parallel("Work stealing", 8, false, parallel)
+    self.parallel("Work stealing", 6, false, parallel)
   }
 
   pub fn our<Par: FnMut(usize) -> T>(self, parallel: Par) -> Self {
-    self.parallel("Our", 5, true, parallel)
+    self.parallel("Work assisting (our)", 7, true, parallel)
   }
 
   pub fn our_fixed_size<Par: FnMut(usize) -> T>(self, parallel: Par) -> Self {
@@ -154,7 +153,7 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
       let affinity = (0 .. thread_count).map(|i| 1 << AFFINITY_MAPPING[i]).fold(0, |a, b| a | b);
 
       let mut total_time = 0.0;
-      let runs = 50;
+      let runs = 100;
       for _ in 0 .. runs {
         let mut command = std::process::Command::new("taskset");
         command
@@ -195,9 +194,9 @@ impl<T> Drop for Benchmarker<T> {
     let file_gnuplot = File::create(filename.clone() + ".gnuplot").unwrap();
     let mut gnuplot = BufWriter::new(&file_gnuplot);
     writeln!(&mut gnuplot, "set title \"{}\"", self.name).unwrap();
-    writeln!(&mut gnuplot, "set terminal pdf size {},2.6", if self.chart_style == ChartStyle::Right {2.3} else {2.6}).unwrap();
+    writeln!(&mut gnuplot, "set terminal pdf size 3.2,2.8").unwrap();
     writeln!(&mut gnuplot, "set output \"{}\"", filename.clone() + ".pdf").unwrap();
-    if self.chart_style == ChartStyle::LeftWithKey {
+    if self.chart_style == ChartStyle::WithKey {
       writeln!(&mut gnuplot, "set key on").unwrap();
       writeln!(&mut gnuplot, "set key top left Left reverse").unwrap();
     } else {
@@ -205,20 +204,16 @@ impl<T> Drop for Benchmarker<T> {
     }
     writeln!(&mut gnuplot, "set xrange [1:32]").unwrap();
     writeln!(&mut gnuplot, "set xtics (1, 4, 8, 12, 16, 20, 24, 28, 32)").unwrap();
-    writeln!(&mut gnuplot, "set xlabel \"Threads\"").unwrap();
+    writeln!(&mut gnuplot, "set xlabel \"Number of threads\"").unwrap();
     writeln!(&mut gnuplot, "set yrange [0:18]").unwrap();
-    if self.chart_style == ChartStyle::Right {
-      writeln!(&mut gnuplot, "set format y \"\"").unwrap();
-    } else {
-      writeln!(&mut gnuplot, "set ylabel \"Speedup\"").unwrap();
-    }
+    writeln!(&mut gnuplot, "set ylabel \"Speedup\"").unwrap();
 
     write!(&mut gnuplot, "plot ").unwrap();
     for (idx, result) in self.output.iter().enumerate() {
       if idx != 0 {
         write!(&mut gnuplot, ", \\\n  ").unwrap();
       }
-      write!(&mut gnuplot, "'{}.dat' using 1:{} title \"{}\" ls {} lw 1 pointsize {} with linespoints", filename, idx+2, result.0, result.1, if result.2 { 0.7 } else { 0.6 }).unwrap();
+      write!(&mut gnuplot, "'{}.dat' using 1:{} title \"{}\" ls {} lw {} pointsize {} with linespoints", filename, idx+2, result.0, result.1, if result.2 { 2.0 } else { 1.0 }, if result.2 { 0.4 } else { 0.7 }).unwrap();
     }
     writeln!(&mut gnuplot, "").unwrap();
 

@@ -2,6 +2,7 @@ use core::sync::atomic::{Ordering, AtomicU64};
 use crate::core::worker::*;
 use crate::core::task::*;
 use crate::core::workassisting_loop::*;
+use crate::utils::loops::*;
 use crate::cases::sum_array;
 
 struct Data<'a> {
@@ -22,9 +23,9 @@ fn work(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
     let to = from + sum_array::BLOCK_SIZE;
 
     let mut local_local_count = 0;
-    for number in from .. to.min(data.array.len()) {
+    loop_fixed_size!(number in from, to, data.array.len(), {
       local_local_count += data.array[number];
-    };
+    });
     local_count += local_local_count;
   });
   counter.fetch_add(local_count, Ordering::Relaxed);

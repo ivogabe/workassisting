@@ -30,7 +30,7 @@ fn run_on(openmp_enabled: bool, size: usize, matrix_count: usize) {
   let pending = AtomicU64::new(0);
 
   let name = "LU (n = ".to_owned() + &size.to_formatted_string(&Locale::en) + ", m = " + &matrix_count.to_formatted_string(&Locale::en) + ")";
-  benchmark(ChartStyle::Left, &name, || {
+  benchmark(ChartStyle::WithKey, &name, || {
     for i in 0 .. matrix_count {
       input.copy_to(&mut matrices[i].0);
       sequential(&mut matrices[i].0);
@@ -42,7 +42,7 @@ fn run_on(openmp_enabled: bool, size: usize, matrix_count: usize) {
     }
     workstealing::run(&matrices, &pending, thread_count);
   })
-  .open_mp_lud(openmp_enabled, "OpenMP", 6, &filename(size), matrix_count)
+  .open_mp_lud(openmp_enabled, "OpenMP", 5, &filename(size), matrix_count)
   .our(|thread_count| {
     for i in 0 .. matrix_count {
       input.copy_to(&mut matrices[i].0);
@@ -65,8 +65,6 @@ fn test() {
   let u = matrices[0].0.upper_triangle_with_diagonal();
   // println!("U = {:?}", u);
   let l = matrices[0].0.lower_triangle_with_1_diagonal();
-  // println!("L = {:?}", l);
-  // println!("LU = {:?}", &l * &u);
   if compute_error(&input, &l, &u) > 10.0 {
     panic!("Large (rounding?) error in result of LU decomposition. The implementation is probably incorrect.");
   }

@@ -146,8 +146,7 @@ main ( int argc, char *argv[] )
   }
 
   for (int i = 0; i < matrix_count; i++) {
-    free(matrices[i]);
-    matrix_duplicate(m, &matrices[i], matrix_dim);
+    memcpy(matrices[i], m, matrix_dim * matrix_dim * sizeof(float));
   }
 
   if (matrix_count == 1) {

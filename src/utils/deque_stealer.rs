@@ -37,7 +37,7 @@ impl Task {
 }
 
 pub fn run_with_workstealing(initial_tasks: Vec<Task>, thread_count: usize) {
-  let workers: Vec<deque::Worker<Task>> = (0 .. thread_count).into_iter().map(|_| deque::Worker::new_fifo()).collect();
+  let workers: Vec<deque::Worker<Task>> = (0 .. thread_count).into_iter().map(|_| deque::Worker::new_lifo()).collect();
   let stealers: Box<[deque::Stealer<Task>]> = workers.iter().map(|w| w.stealer()).collect();
 
   for (index, task) in initial_tasks.into_iter().enumerate() {

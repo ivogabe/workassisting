@@ -7,17 +7,13 @@ use num_format::{Locale, ToFormattedString};
 
 pub mod deque;
 pub mod our;
-pub mod our_fixed_size;
 
 const BLOCK_SIZE: u64 = 32;
 
-pub const START: u64 = 1024 * 1024 * 1024;
 pub const COUNT: u64 = 1024 * 1024;
 
 pub fn run(open_mp_enabled: bool) {
-  run_on(open_mp_enabled, ChartStyle::Left, 2, COUNT/2);
-  run_on(open_mp_enabled, ChartStyle::Left, 2, COUNT * 8);
-  run_on(open_mp_enabled, ChartStyle::Right, START, COUNT / 2);
+  run_on(open_mp_enabled, ChartStyle::WithoutKey, 2, COUNT * 4);
 }
 
 fn run_on(open_mp_enabled: bool, style: ChartStyle, start: u64, count: u64) {
@@ -30,17 +26,11 @@ fn run_on(open_mp_enabled: bool, style: ChartStyle, start: u64, count: u64) {
   .rayon(None, || reference_parallel(start, count))
   .static_parallel(|thread_count, pinned| static_parallel(start, count, thread_count, pinned))
   .work_stealing(|thread_count| deque::count_primes(start, count, thread_count))
-  .open_mp(open_mp_enabled, "OpenMP (static)", 6, "prime-static", Nesting::Flat, start as usize, Some((start + count) as usize))
-  .open_mp(open_mp_enabled, "OpenMP (dynamic)", 7, "prime-dynamic", Nesting::Flat, start as usize, Some((start + count) as usize))
+  .open_mp(open_mp_enabled, "OpenMP (static)", 5, "prime-static", Nesting::Flat, start as usize, Some((start + count) as usize))
+  .open_mp(open_mp_enabled, "OpenMP (dynamic)", 4, "prime-dynamic", Nesting::Flat, start as usize, Some((start + count) as usize))
   .our(|thread_count| {
     let counter = AtomicU32::new(0);
     let task = our::create_task(&counter, start, count);
-    Workers::run(thread_count, task);
-    counter.load(Ordering::Acquire)
-  })
-  .our_fixed_size(|thread_count| {
-    let counter = AtomicU32::new(0);
-    let task = our_fixed_size::create_task(&counter, start, count);
     Workers::run(thread_count, task);
     counter.load(Ordering::Acquire)
   });

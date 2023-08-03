@@ -15,7 +15,7 @@ pub struct Workers<'a> {
 
 impl<'a> Workers<'a> {
   pub fn run(worker_count: usize, initial_task: Task) {
-    let workers: Vec<deque::Worker<epoch::Owned<TaskObject>>> = (0 .. worker_count).into_iter().map(|_| deque::Worker::new_fifo()).collect();
+    let workers: Vec<deque::Worker<epoch::Owned<TaskObject>>> = (0 .. worker_count).into_iter().map(|_| deque::Worker::new_lifo()).collect();
     let stealers: Box<[deque::Stealer<epoch::Owned<TaskObject>>]> = workers.iter().map(|w| w.stealer()).collect();
 
     workers[0].push(unsafe { epoch::Owned::from_raw(initial_task.into_raw()) });

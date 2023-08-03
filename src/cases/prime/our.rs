@@ -2,6 +2,7 @@ use core::sync::atomic::{Ordering, AtomicU32};
 use crate::core::worker::*;
 use crate::core::task::*;
 use crate::core::workassisting_loop::*;
+use crate::loop_fixed_size;
 use crate::cases::prime;
 
 struct Data<'a> {
@@ -19,12 +20,16 @@ fn go(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
 
   workassisting_loop!(loop_arguments, |chunk_index| {
     let mut local_local_count = 0;
-    let end = (data.first + (chunk_index as u64 + 1) * prime::BLOCK_SIZE).min(data.first + data.length);
-    for number in data.first + chunk_index as u64 * prime::BLOCK_SIZE .. end {
-      if prime::is_prime(number) {
-        local_local_count += 1;
+    loop_fixed_size!(number in
+      data.first + chunk_index as u64 * prime::BLOCK_SIZE,
+      data.first + (chunk_index as u64 + 1) * prime::BLOCK_SIZE,
+      data.first + data.length,
+      {
+        if prime::is_prime(number) {
+          local_local_count += 1;
+        }
       }
-    }
+    );
     local_count += local_local_count;
   });
   data.counter.fetch_add(local_count, Ordering::Relaxed);

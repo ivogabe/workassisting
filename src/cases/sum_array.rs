@@ -7,19 +7,18 @@ use num_format::{Locale, ToFormattedString};
 
 mod deque;
 mod our;
-mod our_fixed_size;
 
 pub const BLOCK_SIZE: usize = 2048 * 4;
 
 pub const START: u64 = 1024 * 1024 * 1024;
 
 pub fn run(open_mp_enabled: bool) {
-  for count in [1024 * 1024 * 32 + 1234, 1024 * 1024 * 128 + 1234, 1024 * 1024 * 1024 + 1234] {
+  for count in [1024 * 1024 * 32 + 1234, 512 * 1024 * 1024 + 1234] {
     let name = "Sum array (n = ".to_owned() + &(count).to_formatted_string(&Locale::en) + ")";
     let array: Vec<u64> = (START .. START + count).map(|number| crate::cases::sum_function::random(number) as u64).collect();
 
     benchmark(
-      ChartStyle::LeftWithKey,
+      ChartStyle::WithKey,
       &name,
       || reference_sequential_single(&array)
     )
@@ -28,17 +27,11 @@ pub fn run(open_mp_enabled: bool) {
       .work_stealing(|thread_count| {
         deque::sum(&array, thread_count)
       })
-      .open_mp(open_mp_enabled, "OpenMP (static)", 6, "sum-array-static", Nesting::Flat, count as usize, None)
-      .open_mp(open_mp_enabled, "OpenMP (dynamic)", 7, "sum-array-dynamic", Nesting::Flat, count as usize, None)
+      .open_mp(open_mp_enabled, "OpenMP (static)", 5, "sum-array-static", Nesting::Flat, count as usize, None)
+      .open_mp(open_mp_enabled, "OpenMP (dynamic)", 4, "sum-array-dynamic", Nesting::Flat, count as usize, None)
       .our(|thread_count| {
         let counter = AtomicU64::new(0);
         let task = our::create_task(&counter, &array);
-        Workers::run(thread_count, task);
-        counter.load(Ordering::Acquire)
-      })
-      .our_fixed_size(|thread_count| {
-        let counter = AtomicU64::new(0);
-        let task = our_fixed_size::create_task(&counter, &array);
         Workers::run(thread_count, task);
         counter.load(Ordering::Acquire)
       });

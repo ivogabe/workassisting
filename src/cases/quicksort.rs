@@ -8,7 +8,6 @@ use crate::utils::array::alloc_undef_u32_array;
 use crate::utils::benchmark::{benchmark, ChartStyle, Nesting};
 
 pub mod our;
-pub mod our_fixed_size;
 pub mod deque_parallel_partition;
 pub mod sequential;
 pub mod task_parallel;
@@ -21,7 +20,6 @@ pub const SEQUENTIAL_CUTOFF: usize = 1024 * 8;
 pub fn run(open_mp_enabled: bool) {
   run_on(open_mp_enabled, 1024 * 1024);
   run_on(open_mp_enabled, 1024 * 1024 * 16);
-  run_on(open_mp_enabled, 1024 * 1024 * 64);
 }
 
 fn run_on(open_mp_enabled: bool, size: usize) {
@@ -29,7 +27,7 @@ fn run_on(open_mp_enabled: bool, size: usize) {
   let array2 = unsafe { alloc_undef_u32_array(size) };
   let name = "Sort (n = ".to_owned() + &size.to_formatted_string(&Locale::en) + ")";
   benchmark(
-    if size == 1024 * 1024 * 64 { ChartStyle::Right } else { ChartStyle::LeftWithKey },
+    if size == 1024 * 1024 * 16 { ChartStyle::WithoutKey } else { ChartStyle::WithKey },
     &name,
     || reference_sequential_single(&array1)
   )
@@ -43,17 +41,11 @@ fn run_on(open_mp_enabled: bool, size: usize) {
     deque_parallel_partition::reset_and_sort(&array1, &array2, thread_count);
     output(&array2)
   })
-  .open_mp(open_mp_enabled, "OpenMP (no nested parallelism)", 6, "quicksort", Nesting::Flat, size, None)
-  .open_mp(open_mp_enabled, "OpenMP (split threads)", 7, "quicksort", Nesting::NestedSplit, size, None)
-  .open_mp(open_mp_enabled, "OpenMP (oversaturate)", 8, "quicksort", Nesting::NestedOversaturate, size, None)
+  .open_mp(open_mp_enabled, "OpenMP (balance threads)", 5, "quicksort", Nesting::NestedSplit, size, None)
+  .open_mp(open_mp_enabled, "OpenMP (oversubscribe)", 4, "quicksort", Nesting::NestedOversaturate, size, None)
   .our(|thread_count| {
     let pending_tasks = AtomicU64::new(0);
-    Workers::run(thread_count, create_task_reset(&array1, &pending_tasks, Kind::DataParallel(&array2, false)));
-    output(&array2)
-  })
-  .our_fixed_size(|thread_count| {
-    let pending_tasks = AtomicU64::new(0);
-    Workers::run(thread_count, create_task_reset(&array1, &pending_tasks, Kind::DataParallel(&array2, true)));
+    Workers::run(thread_count, create_task_reset(&array1, &pending_tasks, Kind::DataParallel(&array2)));
     output(&array2)
   });
 }
@@ -83,7 +75,7 @@ struct Reset<'a> {
 }
 enum Kind<'a> {
   OnlyTaskParallel,
-  DataParallel(&'a [AtomicU32], bool)
+  DataParallel(&'a [AtomicU32])
 }
 
 fn reset_run(_workers: &Workers, data: &Reset, loop_arguments: LoopArguments) {
@@ -99,11 +91,8 @@ fn reset_finish(workers: &Workers, data: &Reset) {
     Kind::OnlyTaskParallel => {
       workers.push_task(task_parallel::create_task(data.pending_tasks, data.array).unwrap());
     },
-    Kind::DataParallel(output, false) => {
+    Kind::DataParallel(output) => {
       workers.push_task(our::create_task(data.pending_tasks, data.array, output, false).unwrap());
-    },
-    Kind::DataParallel(output, true) => {
-      workers.push_task(our_fixed_size::create_task(data.pending_tasks, data.array, output, false).unwrap());
     }
   }
 }
@@ -126,39 +115,6 @@ fn reference_sequential_single(array: &[AtomicU32]) -> u64 {
 
 #[inline(always)]
 pub fn parallel_partition_chunk(input: &[AtomicU32], output: &[AtomicU32], pivot: u32, counters: &AtomicU64, chunk_index: usize) {
-  // Loop starts at 1, as element 0 is the pivot.
-  let start = 1 + chunk_index as usize * BLOCK_SIZE ;
-  let end = 1 + ((chunk_index as usize + 1) * BLOCK_SIZE).min(input.len() - 1);
-
-  let mut values = [0; BLOCK_SIZE];
-  let mut left_count = 0;
-  let mut right_count = 0;
-  for i in 0 .. end - start {
-    values[i] = input[start + i].load(Ordering::Relaxed);
-    if values[i] < pivot {
-      left_count += 1;
-    } else {
-      right_count += 1;
-    }
-  }
-  let counters_value = counters.fetch_add((right_count << 32) | left_count, Ordering::Relaxed);
-  let mut left_offset = (counters_value & 0xFFFFFFFF) as usize;
-  let mut right_offset = input.len() - 1 - (counters_value >> 32) as usize;
-  for i in 0 .. end - start {
-    let destination;
-    if values[i] < pivot {
-      destination = left_offset;
-      left_offset += 1;
-    } else {
-      destination = right_offset;
-      right_offset -= 1;
-    }
-    output[destination].store(values[i], Ordering::Relaxed);
-  }
-}
-
-#[inline(always)]
-pub fn parallel_partition_chunk_specialized(input: &[AtomicU32], output: &[AtomicU32], pivot: u32, counters: &AtomicU64, chunk_index: usize) {
   // Loop starts at 1, as element 0 is the pivot.
   let start = 1 + chunk_index as usize * BLOCK_SIZE ;
 
