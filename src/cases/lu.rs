@@ -60,7 +60,7 @@ fn test() {
 
   let pending = AtomicU64::new(0);
   let matrices = vec![(matrix, AtomicU64::new(0), AtomicU64::new(0))];
-  Workers::run(32, our::create_task(&matrices, &pending));
+  Workers::run(2, our::create_task(&matrices, &pending));
 
   let u = matrices[0].0.upper_triangle_with_diagonal();
   // println!("U = {:?}", u);
