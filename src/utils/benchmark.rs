@@ -87,6 +87,9 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
     println!("{}", name);
     let mut results = vec![];
     for thread_count in THREAD_COUNTS {
+      if thread_count > affinity::get_core_num() {
+        break;
+      }
       let affinity = (0 .. thread_count).map(|i| 1 << AFFINITY_MAPPING[i]).fold(0, |a, b| a | b);
 
       let omp_threads = match nesting {
@@ -131,6 +134,9 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
     println!("{}", name);
     let mut results = vec![];
     for thread_count in THREAD_COUNTS {
+      if thread_count > affinity::get_core_num() {
+        break;
+      }
       let affinity = (0 .. thread_count).map(|i| 1 << AFFINITY_MAPPING[i]).fold(0, |a, b| a | b);
 
       let mut total_time = 0.0;
