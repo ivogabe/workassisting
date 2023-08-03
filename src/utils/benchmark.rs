@@ -37,21 +37,6 @@ pub fn benchmark<T: Debug + Eq, Ref: FnMut() -> T>(chart_style: ChartStyle, name
 }
 
 impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
-  pub fn sequential<Seq: FnMut() -> T>(self, name: &str, sequential: Seq) -> Self {
-    let (value, time) = time(20, sequential);
-    assert_eq!(self.expected, value);
-
-    let relative = self.reference_time as f32 / time as f32;
-    if name.len() <= 12 {
-      println!("{:12} {} ms ({:.2}x)", name, time / 1000, relative);
-    } else {
-      println!("{}", name);
-      println!("{:12} {} ms ({:.2}x)", "", time / 1000, relative);
-    }
-    // self.output.push((name.to_owned(), vec![relative]));
-    self
-  }
-
   pub fn rayon<Par: FnMut() -> T + Sync + Send>(self, label: Option<&str>, mut parallel: Par) -> Self {
     let string;
     let name = if let Some(l) = label {
@@ -76,10 +61,6 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
 
   pub fn our<Par: FnMut(usize) -> T>(self, parallel: Par) -> Self {
     self.parallel("Work assisting (our)", 7, true, parallel)
-  }
-
-  pub fn our_fixed_size<Par: FnMut(usize) -> T>(self, parallel: Par) -> Self {
-    self.parallel("Our (specialized loop)", 4, true, parallel)
   }
 
   pub fn parallel<Par: FnMut(usize) -> T>(mut self, name: &str, chart_line_style: u32, our: bool, mut parallel: Par) -> Self {
