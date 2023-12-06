@@ -15,7 +15,9 @@ pub fn create_task(counter: &AtomicU64, first: u64, length: u64) -> Task {
   Task::new_dataparallel::<Data>(work, finish, Data{ counter, first, length }, ((length + sum_function::BLOCK_SIZE - 1) / sum_function::BLOCK_SIZE) as u32)
 }
 
-fn work(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
+fn work(_workers: &Workers, task: *const TaskObject<Data>, loop_arguments: LoopArguments) {
+  let data = unsafe { TaskObject::get_data(task) };
+
   let mut local_count = 0;
   
   let first = data.first;
@@ -34,6 +36,9 @@ fn work(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
   counter.fetch_add(local_count, Ordering::Relaxed);
 }
 
-fn finish(workers: &Workers, _data: &Data) {
+fn finish(workers: &Workers, task: *mut TaskObject<Data>) {
+  unsafe {
+    drop(Box::from_raw(task));
+  }
   workers.finish();
 }

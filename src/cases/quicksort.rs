@@ -78,7 +78,9 @@ enum Kind<'a> {
   DataParallel(&'a [AtomicU32])
 }
 
-fn reset_run(_workers: &Workers, data: &Reset, loop_arguments: LoopArguments) {
+fn reset_run(_workers: &Workers, task: *const TaskObject<Reset>, loop_arguments: LoopArguments) {
+  let data = unsafe { TaskObject::get_data(task) };
+
   workassisting_loop!(loop_arguments, |chunk_index| {
     for index in chunk_index as usize * BLOCK_SIZE .. ((chunk_index as usize + 1) * BLOCK_SIZE).min(data.array.len()) {
       data.array[index as usize].store(random(index as u64), Ordering::Relaxed);
@@ -86,7 +88,9 @@ fn reset_run(_workers: &Workers, data: &Reset, loop_arguments: LoopArguments) {
   });
 }
 
-fn reset_finish(workers: &Workers, data: &Reset) {
+fn reset_finish(workers: &Workers, task: *mut TaskObject<Reset>) {
+  let data = unsafe { TaskObject::take_data(task) };
+
   match data.kind {
     Kind::OnlyTaskParallel => {
       workers.push_task(task_parallel::create_task(data.pending_tasks, data.array).unwrap());

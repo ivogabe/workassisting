@@ -1,17 +1,17 @@
 use core::fmt::Debug;
-use core::mem;
 use core::sync::atomic::{ AtomicI32, AtomicU32 };
-use std::alloc::Layout;
 use core::mem::forget;
 use core::ops::{Drop, Deref, DerefMut};
 use crate::core::worker::*;
 
-pub struct Task (*mut TaskObject);
+pub struct Task (*mut TaskObject<()>);
 
-pub struct TaskObject {
-  pub function: fn(workers: &Workers, data: &(), loop_arguments: LoopArguments) -> (),
-  pub continuation: fn(workers: &Workers, data: &()) -> (),
-  pub data_offset: usize,
+#[repr(C)]
+pub struct TaskObject<T> {
+  // 'function' borrows the TaskObject
+  pub(super) function: Option<fn(workers: &Workers, this: *const TaskObject<T>, loop_arguments: LoopArguments) -> ()>,
+  // 'continuation' takes ownership of the TaskObject
+  pub(super) continuation: fn(workers: &Workers, this: *mut TaskObject<T>) -> (),
   // The number of active_threads, offset by the tag in the activities array.
   // If this task is present in activities, then:
   //   - active_threads contains - (the number of finished threads), thus non-positive.
@@ -22,10 +22,10 @@ pub struct TaskObject {
   //   - the task is not present in activities.
   //   - no thread is still working on this task.
   // Hence we can run the continuation function and deallocate the task.
-  pub active_threads: AtomicI32,
-  pub work_index: AtomicU32,
-  pub work_size: u32,
-  pub layout: Layout, // The layout of the TaskObject extended with the data. Needed to deallocate them
+  pub(super) active_threads: AtomicI32,
+  pub(super) work_index: AtomicU32,
+  pub(super) work_size: u32,
+  pub data: T,
 }
 
 impl Debug for Task {
@@ -35,86 +35,52 @@ impl Debug for Task {
   }
 }
 
-impl Debug for TaskObject {
+impl<T> Debug for TaskObject<T> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-    write!(f, "Task:\n  function {:?}\n  continuation {:?}\n size {:?}\n index {:?}\n active threads {:?}", self.function as *const (), self.continuation as *const (), self.work_size, self.work_index, self.active_threads)
+    let function = self.function.map(|f| f as *const ());
+    write!(f, "Task:\n  function {:?}\n  continuation {:?}\n size {:?}\n index {:?}\n active threads {:?}", function, self.continuation as *const (), self.work_size, self.work_index, self.active_threads)
   }
 }
 
 impl Task {
   pub fn new_dataparallel<T: Send + Sync>(
-    function: fn(workers: &Workers, data: &T, loop_arguments: LoopArguments) -> (),
-    continuation: fn(workers: &Workers, data: &T) -> (),
+    function: fn(workers: &Workers, data: *const TaskObject<T>, loop_arguments: LoopArguments) -> (),
+    continuation: fn(workers: &Workers, data: *mut TaskObject<T>) -> (),
     data: T,
     work_size: u32
   ) -> Task {
-    let layout_task = Layout::new::<TaskObject>();
-    let layout_data = Layout::new::<T>();
-    let (layout, data_offset) = layout_task.extend(layout_data).expect("Overflow when constructing allocation layout of task");
-
-    let memory = unsafe { std::alloc::alloc(layout) };
-    let task_ptr = memory as *mut TaskObject;
-    let data_ptr = unsafe { memory.add(data_offset) } as *mut T;
-
-    unsafe {
-      *task_ptr = TaskObject{
-        function: mem::transmute(function),
-        continuation: mem::transmute(continuation),
-        data_offset,
-        work_size,
-        active_threads: AtomicI32::new(0),
-        work_index: AtomicU32::new(1),
-        layout
-      };
-      *data_ptr = data;
-    }
-    Task(task_ptr)
+    let task_box: Box<TaskObject<T>> = Box::new(TaskObject{
+      function: Some(function),
+      continuation,
+      work_size,
+      active_threads: AtomicI32::new(0),
+      work_index: AtomicU32::new(1),
+      data
+    });
+    Task(Box::into_raw(task_box) as *mut TaskObject<()>)
   }
 
   pub fn new_single<T: Send + Sync>(
-    function: fn(workers: &Workers, data: &T) -> (),
+    function: fn(workers: &Workers, data: *mut TaskObject<T>) -> (),
     data: T
   ) -> Task {
-    let layout_task = Layout::new::<TaskObject>();
-    let layout_data = Layout::new::<T>();
-    let (layout, data_offset) = layout_task.extend(layout_data).expect("Overflow when constructing allocation layout of task");
-
-    let memory = unsafe { std::alloc::alloc(layout) };
-    let task_ptr = memory as *mut TaskObject;
-    let data_ptr = unsafe { memory.add(data_offset) } as *mut T;
-
-    unsafe {
-      *task_ptr = TaskObject{
-        function: no_work,
-        continuation: mem::transmute(function),
-        data_offset,
-        work_size: 0,
-        active_threads: AtomicI32::new(0),
-        work_index: AtomicU32::new(0),
-        layout
-      };
-      *data_ptr = data;
-    }
-    Task(task_ptr)
+    let task_box: Box<TaskObject<T>> = Box::new(TaskObject{
+      function: None,
+      continuation: function,
+      work_size: 0,
+      active_threads: AtomicI32::new(0),
+      work_index: AtomicU32::new(0),
+      data
+    });
+    Task(Box::into_raw(task_box) as *mut TaskObject<()>)
   }
 
-  // This is unsafe, as the caller should now assure that the object is properly deallocated.
+  // The caller should assure that the object is properly deallocated.
   // This can be done by calling Task::from_raw.
-  pub unsafe fn into_raw(self) -> *mut TaskObject {
+  pub fn into_raw(self) -> *mut TaskObject<()> {
     let ptr = self.0;
     forget(self); // Don't run drop() on self, as that would deallocate the TaskObject
     ptr
-  }
-
-  // This is unsafe, as the type system doesn't guarantee that the pointer points to a proper TaskObject.
-  pub unsafe fn from_raw(ptr: *mut TaskObject) -> Task {
-    Task(ptr)
-  }
-
-  pub unsafe fn ptr_data(ptr: *const TaskObject) -> *const () {
-    unsafe {
-      (ptr as *const u8).add((*ptr).data_offset) as *const ()
-    }
   }
 }
 
@@ -123,15 +89,14 @@ unsafe impl Sync for Task {}
 
 impl Drop for Task {
   fn drop(&mut self) {
-    // println!("Deallocate task");
-    unsafe {
-      std::alloc::dealloc(self.0 as *mut u8, (*self.0).layout);
-    }
+    // We cannot drop the TaskObject<T> here, as we don't know the type argument T here.
+    // We assume that the TaskObject is passed to Workers; that will handle the deallocation of the TaskObject.
+    println!("Warning: TaskObject not cleared. Make sure that all constructed Tasks are also passed to Workers.");
   }
 }
 
 impl Deref for Task {
-  type Target = TaskObject;
+  type Target = TaskObject<()>;
 
   fn deref(&self) -> &Self::Target {
     unsafe { &*self.0 }
@@ -144,8 +109,15 @@ impl DerefMut for Task {
   }
 }
 
-fn no_work(_workers: &Workers, _data: &(), _loop_arguments: LoopArguments) {
-  println!("Should be unreachable!");
+impl<T> TaskObject<T> {
+  // Safety: caller should guarantee that the TaskObject outlives lifetime 'a.
+  pub unsafe fn get_data<'a>(task: *const TaskObject<T>) -> &'a T {
+    unsafe { &(*task).data }
+  }
+
+  pub unsafe fn take_data<'a>(task: *mut TaskObject<T>) -> T {
+    unsafe { Box::from_raw(task) }.data
+  }
 }
 
 pub struct LoopArguments<'a> {

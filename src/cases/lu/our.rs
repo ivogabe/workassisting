@@ -44,7 +44,9 @@ struct Init<'a> {
   pending: &'a AtomicU64
 }
 
-fn task_init_go(workers: &Workers, data: &Init, loop_arguments: LoopArguments) {
+fn task_init_go(workers: &Workers, task: *const TaskObject<Init>, loop_arguments: LoopArguments) {
+  let data = unsafe { TaskObject::get_data(task) };
+
   workassisting_loop!(loop_arguments, |index| {
     let (matrix, synchronisation_var, _) = &data.matrices[index as usize];
     diagonal_tile(0, matrix);
@@ -52,7 +54,11 @@ fn task_init_go(workers: &Workers, data: &Init, loop_arguments: LoopArguments) {
   });
 }
 
-fn task_init_finish(_workers: &Workers, _data: &Init) {
+fn task_init_finish(_workers: &Workers, task: *mut TaskObject<Init>) {
+  unsafe {
+    // Assure that the task gets dropped
+    drop(Box::from_raw(task));
+  }
 }
 
 struct Data<'a> {
@@ -96,9 +102,10 @@ fn start_iteration(workers: &Workers, offset: usize, matrix: &SquareMatrix, sync
   }
 }
 
-fn task_border_left_go(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
-  let mut temp = Align([0.0; OUTER_BLOCK_SIZE * OUTER_BLOCK_SIZE]);
+fn task_border_left_go(_workers: &Workers, task: *const TaskObject<Data>, loop_arguments: LoopArguments) {
+  let data = unsafe { TaskObject::get_data(task) };
 
+  let mut temp = Align([0.0; OUTER_BLOCK_SIZE * OUTER_BLOCK_SIZE]);
   border_init(data.offset, data.matrix, &mut temp);
 
   workassisting_loop!(loop_arguments, |chunk_index| {
@@ -106,9 +113,10 @@ fn task_border_left_go(_workers: &Workers, data: &Data, loop_arguments: LoopArgu
   });
 }
 
-fn task_border_top_go(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
-  let mut temp = Align([0.0; OUTER_BLOCK_SIZE * OUTER_BLOCK_SIZE]);
+fn task_border_top_go(_workers: &Workers, task: *const TaskObject<Data>, loop_arguments: LoopArguments) {
+  let data = unsafe { TaskObject::get_data(task) };
 
+  let mut temp = Align([0.0; OUTER_BLOCK_SIZE * OUTER_BLOCK_SIZE]);
   border_init(data.offset, data.matrix, &mut temp);
 
   workassisting_loop!(loop_arguments, |chunk_index| {
@@ -116,7 +124,9 @@ fn task_border_top_go(_workers: &Workers, data: &Data, loop_arguments: LoopArgum
   });
 }
 
-fn task_border_finish(workers: &Workers, data: &Data) {
+fn task_border_finish(workers: &Workers, task: *mut TaskObject<Data>) {
+  let data = unsafe { TaskObject::take_data(task) };
+
   // The algorithm continues when both the left and the top parts have finished.
   // This function handles the finish phase of both tasks.
   // The first task to finish sets the synchronisation var to 1 (the CAS succeeds).
@@ -141,7 +151,9 @@ fn task_border_finish(workers: &Workers, data: &Data) {
   );
 }
 
-fn task_inner_go(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
+fn task_inner_go(_workers: &Workers, task: *const TaskObject<Data>, loop_arguments: LoopArguments) {
+  let data = unsafe { TaskObject::get_data(task) };
+
   let remaining = data.matrix.size() - data.offset - OUTER_BLOCK_SIZE;
   let rows = (remaining + INNER_BLOCK_SIZE_ROWS - 1) / INNER_BLOCK_SIZE_ROWS;
 
@@ -166,7 +178,8 @@ fn task_inner_go(_workers: &Workers, data: &Data, loop_arguments: LoopArguments)
   });
 }
 
-fn task_inner_finish(workers: &Workers, data: &Data) {
+fn task_inner_finish(workers: &Workers, task: *mut TaskObject<Data>) {
+  let data = unsafe { TaskObject::take_data(task) };
   start_iteration(workers, data.offset + OUTER_BLOCK_SIZE, data.matrix, data.synchronisation_var, data.pending);
 }
 

@@ -69,7 +69,9 @@ pub fn create_task<'a>(pending_tasks: &'a AtomicU64, input: &'a [AtomicU32], out
   Some(Task::new_dataparallel(partition_run, partition_finish, data, ((input.len() - 1 + BLOCK_SIZE - 1) / BLOCK_SIZE) as u32))
 }
 
-fn partition_run(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
+fn partition_run(_workers: &Workers, task: *const TaskObject<Data>, loop_arguments: LoopArguments) {
+  let data = unsafe { TaskObject::get_data(task) };
+
   let pivot = data.input[0].load(Ordering::Relaxed);
 
   workassisting_loop!(loop_arguments, |chunk_index| {
@@ -77,7 +79,9 @@ fn partition_run(_workers: &Workers, data: &Data, loop_arguments: LoopArguments)
   });
 }
 
-fn partition_finish(workers: &Workers, data: &Data) {
+fn partition_finish(workers: &Workers, task: *mut TaskObject<Data>) {
+  let data = unsafe { TaskObject::take_data(task) };
+
   let counters = data.counters.load(Ordering::Relaxed);
   let count_left = counters & 0xFFFFFFFF;
   let count_right = counters >> 32;

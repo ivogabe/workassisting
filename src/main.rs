@@ -14,6 +14,7 @@ fn main() {
 
   affinity::set_thread_affinity([AFFINITY_MAPPING[0]]).unwrap();
   cases::lu::run(open_mp_enabled);
+  affinity::set_thread_affinity(AFFINITY_MAPPING).unwrap();
   cases::quicksort::run(open_mp_enabled);
   cases::prime::run(open_mp_enabled);
   cases::sum_array::run(open_mp_enabled);

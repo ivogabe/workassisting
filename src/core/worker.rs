@@ -11,7 +11,7 @@ pub struct Workers<'a> {
   worker_count: usize,
   worker: deque::Worker<Task>,
   stealers: &'a [deque::Stealer<Task>],
-  activities: &'a [AtomicTaggedPtr<TaskObject>]
+  activities: &'a [AtomicTaggedPtr<TaskObject<()>>]
 }
 
 impl<'a> Workers<'a> {
@@ -21,7 +21,7 @@ impl<'a> Workers<'a> {
 
     workers[0].push(initial_task);
 
-    let activities: Box<[AtomicTaggedPtr<TaskObject>]> = unsafe {
+    let activities: Box<[AtomicTaggedPtr<TaskObject<()>>]> = unsafe {
       std::mem::transmute(vec![0 as usize; worker_count].into_boxed_slice())
     };
 
@@ -140,16 +140,19 @@ impl<'a> Workers<'a> {
       // This task doesn't have data parallelism.
       // Hence task.function doesn't need to be called,
       // only task.continuation.
-      (task.continuation)(self, unsafe { &*Task::ptr_data(&*task) });
-      // Safety: no other threads will work on this task,
+      // No other threads will work on this task,
       // as it is never pushed to the 'activities' list.
       // Hence we can take unique ownership of this task here,
-      // and drop it.
-      drop(task);
+      // and pass it to continuation.
+      let task_ref: *const TaskObject<()> = &*task;
+      let continuation = task.continuation;
+      // task.continuation will drop the object. Hence we shouldn't do that here.
+      std::mem::forget(task);
+      (continuation)(self, task_ref as *mut TaskObject<()>);
       return;
     }
 
-    let task_ptr = unsafe { task.into_raw() };
+    let task_ptr = task.into_raw();
     let task_ref = unsafe { &*task_ptr };
 
     // Since this thread previously had no activity (i.e., a null pointer),
@@ -162,14 +165,16 @@ impl<'a> Workers<'a> {
   }
 
   // Calls the work function of a task, and calls end_task afterwards
-  fn call_task(&self, task: &TaskObject, signal: EmptySignal, first_index: u32) {
-    (task.function)(self, unsafe { &*Task::ptr_data(&*task) }, LoopArguments{ work_size: task.work_size, work_index: &task.work_index, empty_signal: signal, first_index });
+  fn call_task(&self, task: *const TaskObject<()>, signal: EmptySignal, first_index: u32) {
+    let task_ref = unsafe { &*task };
+    (task_ref.function.unwrap())(self, task, LoopArguments{ work_size: task_ref.work_size, work_index: &task_ref.work_index, empty_signal: signal, first_index });
     self.end_task(task);
   }
 
-  fn end_task(&self, task: &TaskObject) {
+  fn end_task(&self, task: *const TaskObject<()>) {
+    let task_ref = unsafe { &*task };
     // Check whether there is no pending work (that is claimed, but not finished yet).
-    let remaining = task.active_threads.fetch_sub(1, Ordering::AcqRel) - 1;
+    let remaining = task_ref.active_threads.fetch_sub(1, Ordering::AcqRel) - 1;
     if remaining == 0 {
       // Only one thread will decrement active_threads to zero.
       // That thread will call the continuation of the task.
@@ -177,17 +182,16 @@ impl<'a> Workers<'a> {
       // this task is not present anymore in activities at this point
       // and other threads are not working on this task any more.
       // Hence we can take unique ownership of this task now.
-      (task.continuation)(self, unsafe { &*Task::ptr_data(&*task) });
-      // Take unique ownership of this task
-      let task = unsafe { Task::from_raw(&*task as *const TaskObject as *mut TaskObject) };
-      drop(task);
+      let continuation = task_ref.continuation;
+      // task.continuation will drop the object. Hence we shouldn't do that here.
+      (continuation)(self, task as *mut TaskObject<()>);
     }
   }
 }
 
 pub struct EmptySignal<'a> {
-  pointer: &'a AtomicTaggedPtr<TaskObject>,
-  task: &'a TaskObject,
+  pointer: &'a AtomicTaggedPtr<TaskObject<()>>,
+  task: &'a TaskObject<()>,
   state: EmptySignalState
 }
 

@@ -5,7 +5,8 @@
 
 use core::sync::atomic::{Ordering, AtomicU32, AtomicU64};
 
-use crate::core::{worker::Workers, task::Task};
+use crate::core::worker::Workers;
+use crate::core::task::{Task, TaskObject};
 
 const INSERTION_SORT_CUTOFF: usize = 20;
 
@@ -74,7 +75,8 @@ struct SequentialSort<'a> {
   output: Option<&'a [AtomicU32]>
 }
 
-fn sequential_sort_run(workers: &Workers, data: &SequentialSort) {
+fn sequential_sort_run(workers: &Workers, task: *mut TaskObject<SequentialSort>) {
+  let data = unsafe { TaskObject::take_data(task) };
   let array = if let Some(output) = data.output {
     for i in 0 .. output.len() {
       output[i].store(data.input[i].load(Ordering::Relaxed), Ordering::Relaxed);

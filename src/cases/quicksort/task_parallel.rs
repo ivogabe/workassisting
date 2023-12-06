@@ -5,7 +5,8 @@
 
 use core::sync::atomic::{Ordering, AtomicU32, AtomicU64};
 
-use crate::core::{worker::Workers, task::Task};
+use crate::core::task::{Task, TaskObject};
+use crate::core::worker::Workers;
 
 use crate::cases::quicksort::SEQUENTIAL_CUTOFF;
 use crate::cases::quicksort::sequential;
@@ -34,8 +35,13 @@ pub struct Sort<'a> {
   pub array: &'a [AtomicU32],
 }
 
-pub fn run(workers: &Workers, data: &Sort) {
-  let array = data.array;
+pub fn run(workers: &Workers, task: *mut TaskObject<Sort>) {
+  let data = unsafe { TaskObject::take_data(task) };
+  run_go(workers, data.pending_tasks, data.array);
+}
+
+fn run_go(workers: &Workers, pending_tasks: &AtomicU64, array: &[AtomicU32]) {
+  let array = array;
   assert!(array.len() > 1);
 
   let pivot = array[0].load(Ordering::Relaxed);
@@ -60,12 +66,12 @@ pub fn run(workers: &Workers, data: &Sort) {
   array[right].store(pivot, Ordering::Relaxed);
 
   for (start, end) in [(0, right), (right + 1, array.len())] {
-    if let Some(task) = create_task(data.pending_tasks, &array[start .. end]) {
+    if let Some(task) = create_task(pending_tasks, &array[start .. end]) {
       workers.push_task(task);
     }
   }
 
-  if data.pending_tasks.fetch_sub(1, Ordering::Relaxed) == 1 {
+  if pending_tasks.fetch_sub(1, Ordering::Relaxed) == 1 {
     workers.finish();
   }
 }
@@ -76,12 +82,10 @@ pub struct SortWithCopy<'a> {
   pub output: &'a [AtomicU32]
 }
 
-pub fn run_with_copy(workers: &Workers, data: &SortWithCopy) {
+pub fn run_with_copy(workers: &Workers, task: *mut TaskObject<SortWithCopy>) {
+  let data = unsafe { TaskObject::take_data(task) };
   for i in 0 .. data.output.len() {
     data.output[i].store(data.input[i].load(Ordering::Relaxed), Ordering::Relaxed);
   }
-  run(workers, &Sort{
-    pending_tasks: data.pending_tasks,
-    array: data.output
-  });
+  run_go(workers, data.pending_tasks, data.output);
 }

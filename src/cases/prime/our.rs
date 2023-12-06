@@ -15,7 +15,9 @@ pub fn create_task(counter: &AtomicU32, first: u64, length: u64) -> Task {
   Task::new_dataparallel::<Data>(go, finish, Data{ counter, first, length }, ((length + prime::BLOCK_SIZE - 1) / prime::BLOCK_SIZE) as u32)
 }
 
-fn go(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
+fn go(_workers: &Workers, task: *const TaskObject<Data>, loop_arguments: LoopArguments) {
+  let data = unsafe { TaskObject::get_data(task) };
+
   let mut local_count = 0;
 
   workassisting_loop!(loop_arguments, |chunk_index| {
@@ -35,6 +37,9 @@ fn go(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
   data.counter.fetch_add(local_count, Ordering::Relaxed);
 }
 
-fn finish(workers: &Workers, _data: &Data) {
+fn finish(workers: &Workers, data: *mut TaskObject<Data>) {
+  unsafe {
+    drop(Box::from_raw(data));
+  }
   workers.finish();
 }
