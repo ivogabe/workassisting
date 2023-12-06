@@ -3,20 +3,32 @@ use core::fmt;
 use core::cell::UnsafeCell;
 use core::ops::{IndexMut, Index, Mul};
 
+#[repr(C)]
+#[repr(align(64))]
+#[derive(Clone, Copy)]
+pub struct F32x32(pub [f32; 32]);
+
 // Square matrix with interior mutability
 pub struct SquareMatrix {
   size: usize,
-  data: Box<[UnsafeCell<f32>]>
+  data: Box<[UnsafeCell<F32x32>]>
 }
 unsafe impl Sync for SquareMatrix {}
 
 impl SquareMatrix {
   pub fn new(size: usize) -> SquareMatrix {
-    let data: Vec<f32> = vec![0.0; size * size];
+    let data: Vec<F32x32> = vec![F32x32([0.0; 32]); size * size / 32];
     SquareMatrix{
       size,
       // Safety: f32 and UnsafeCell<f32> have the same representation in memory
       data: unsafe { mem::transmute(data.into_boxed_slice()) }
+    }
+  }
+
+  #[inline(always)]
+  fn data_f32(&self) -> &[UnsafeCell<f32>] {
+    unsafe {
+      std::slice::from_raw_parts(self.data.as_ptr() as *const UnsafeCell<f32>, self.data.len() * 32)
     }
   }
 
@@ -43,8 +55,20 @@ impl SquareMatrix {
   #[inline(always)]
   pub fn get_unsafe_cell(&self, index: (usize, usize)) -> &UnsafeCell<f32> {
     unsafe {
-      &self.data.get_unchecked(self.linear_index(index))
+      &self.data_f32().get_unchecked(self.linear_index(index))
     }
+  }
+
+  #[inline(always)]
+  pub fn slice(&self, row: usize, column_start: usize, column_count: usize) -> &[UnsafeCell<f32>] {
+    let index = row * self.size + column_start;
+    &self.data_f32()[index .. index + column_count]
+  }
+
+  #[inline(always)]
+  pub fn slice32(&self, row: usize, column_start: usize) -> &UnsafeCell<F32x32> {
+    let index = row * self.size + column_start;
+    unsafe { self.data.get_unchecked(index / 32) }
   }
 
   pub fn upper_triangle_with_diagonal(&self) -> SquareMatrix {
@@ -87,7 +111,7 @@ impl SquareMatrix {
 
 impl Clone for SquareMatrix {
   fn clone(&self) -> Self {
-    let mut data: Vec<f32> = vec![0.0; self.size * self.size];
+    let mut data: Vec<F32x32> = vec![F32x32([0.0; 32]); self.data.len()];
     for i in 0 .. data.len() {
       data[i] = unsafe { *self.data[i].get() };
     }

@@ -63,14 +63,24 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
     self.parallel("Work assisting (our)", 7, true, parallel)
   }
 
+  pub fn sequential<Seq: FnMut() -> T>(self, name: &str, sequential: Seq) -> Self {
+    let (value, time) = time(20, sequential);
+    assert_eq!(self.expected, value);
+
+    let relative = self.reference_time as f32 / time as f32;
+    if name.len() <= 12 {
+      println!("{:12} {} ms ({:.2}x)", name, time / 1000, relative);
+    } else {
+      println!("{}", name);
+      println!("{:12} {} ms ({:.2}x)", "", time / 1000, relative);
+    }
+    self
+  }
+
   pub fn parallel<Par: FnMut(usize) -> T>(mut self, name: &str, chart_line_style: u32, our: bool, mut parallel: Par) -> Self {
     println!("{}", name);
     let mut results = vec![];
     for thread_count in THREAD_COUNTS {
-      if thread_count > affinity::get_core_num() {
-        break;
-      }
-
       let (value, time) = time(20, || parallel(thread_count));
       assert_eq!(self.expected, value);
       let relative = self.reference_time as f32 / time as f32;
@@ -87,9 +97,6 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
     println!("{}", name);
     let mut results = vec![];
     for thread_count in THREAD_COUNTS {
-      if thread_count > affinity::get_core_num() {
-        break;
-      }
       let affinity = (0 .. thread_count).map(|i| 1 << AFFINITY_MAPPING[i]).fold(0, |a, b| a | b);
 
       let omp_threads = match nesting {
@@ -134,9 +141,6 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
     println!("{}", name);
     let mut results = vec![];
     for thread_count in THREAD_COUNTS {
-      if thread_count > affinity::get_core_num() {
-        break;
-      }
       let affinity = (0 .. thread_count).map(|i| 1 << AFFINITY_MAPPING[i]).fold(0, |a, b| a | b);
 
       let mut total_time = 0.0;

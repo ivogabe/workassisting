@@ -9,6 +9,7 @@ use std::sync::atomic::AtomicU64;
 use crate::core::worker::*;
 use crate::core::task::*;
 use crate::core::workassisting_loop::*;
+use super::*;
 
 // The workload of LU decomposition is parallelised as follows.
 // Compared to the sequential implementation, we perform OUTER_BLOCK_SIZE of the outer loop at the same time.
@@ -25,9 +26,9 @@ use crate::core::workassisting_loop::*;
 // The outer loop is split in tiles of OUTER_BLOCK_SIZE * OUTER_BLOCK_SIZE elements.
 const OUTER_BLOCK_SIZE: usize = 32;
 // The left border and top border are handled in chunks of BORDER_BLOCK_SIZE elements.
-const BORDER_BLOCK_SIZE: usize = 16;
+const BORDER_BLOCK_SIZE: usize = 32;
 // The inner part of the array is handled in tiles of the following size.
-const INNER_BLOCK_SIZE_ROWS: usize = 16;
+const INNER_BLOCK_SIZE_ROWS: usize = 32;
 const INNER_BLOCK_SIZE_COLUMNS: usize = 32;
 
 // The matrix size should be a multiple of OUTER_BLOCK_SIZE.
@@ -95,79 +96,23 @@ fn start_iteration(workers: &Workers, offset: usize, matrix: &SquareMatrix, sync
   }
 }
 
-// Handles the tile on the diagonal, at the start of a new iteration.
-fn diagonal_tile(offset: usize, matrix: &SquareMatrix) {
-  for i in 0 .. OUTER_BLOCK_SIZE {
-    for j in i .. OUTER_BLOCK_SIZE {
-      for k in 0 .. i {
-        matrix.write((offset + i, offset + j), matrix[(offset + i, offset + j)] - matrix[(offset + i, offset + k)] * matrix[(offset + k, offset + j)]);
-      }
-    }
-
-    let temp = 1.0 / matrix[(offset + i, offset + i)];
-    for j in i + 1 .. OUTER_BLOCK_SIZE {
-      for k in 0 .. i {
-        matrix.write((offset + j, offset + i), matrix[(offset + j, offset + i)] - matrix[(offset + j, offset + k)] * matrix[(offset + k, offset + i)]);
-      }
-      matrix.write((offset + j, offset + i), matrix[(offset + j, offset + i)] * temp);
-    }
-  }
-}
-
 fn task_border_left_go(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
-  let mut temp = [0.0; OUTER_BLOCK_SIZE * OUTER_BLOCK_SIZE];
+  let mut temp = Align([0.0; OUTER_BLOCK_SIZE * OUTER_BLOCK_SIZE]);
 
-  for i in 0 .. OUTER_BLOCK_SIZE {
-    for j in 0 .. OUTER_BLOCK_SIZE {
-      temp[i * OUTER_BLOCK_SIZE + j] = data.matrix[(i + data.offset, j + data.offset)];
-    }
-  }
+  border_init(data.offset, data.matrix, &mut temp);
 
   workassisting_loop!(loop_arguments, |chunk_index| {
-    let offset = data.offset;
-    let matrix = data.matrix;
-
-    let i_global = offset + OUTER_BLOCK_SIZE + BORDER_BLOCK_SIZE * (chunk_index as usize);
-    let j_global = offset;
-    for j in 0 .. OUTER_BLOCK_SIZE {
-      for i in 0 .. BORDER_BLOCK_SIZE {
-        let mut sum = 0.0;
-        for k in 0 .. j {
-          sum += matrix[(i_global + i, j_global + k)] * temp[OUTER_BLOCK_SIZE * k + j];
-        }
-        matrix.write(
-          (i_global + i, j_global + j),
-          (matrix[(i_global + i, j_global + j)] - sum) / matrix[(offset + j, offset + j)]
-        );
-      }
-    }
+    border_left_chunk::<BORDER_BLOCK_SIZE>(data.offset, data.matrix, &temp, chunk_index as usize);
   });
 }
 
 fn task_border_top_go(_workers: &Workers, data: &Data, loop_arguments: LoopArguments) {
-  let mut temp = [0.0; OUTER_BLOCK_SIZE * OUTER_BLOCK_SIZE];
+  let mut temp = Align([0.0; OUTER_BLOCK_SIZE * OUTER_BLOCK_SIZE]);
 
-  for i in 0 .. OUTER_BLOCK_SIZE {
-    for j in 0 .. OUTER_BLOCK_SIZE {
-      temp[i * OUTER_BLOCK_SIZE + j] = data.matrix[(i + data.offset, j + data.offset)];
-    }
-  }
+  border_init(data.offset, data.matrix, &mut temp);
 
   workassisting_loop!(loop_arguments, |chunk_index| {
-    let offset = data.offset;
-    let matrix = data.matrix;
-
-    let i_global = offset;
-    let j_global = offset + OUTER_BLOCK_SIZE + BORDER_BLOCK_SIZE * (chunk_index as usize);
-    for j in 0 .. BORDER_BLOCK_SIZE {
-      for i in 0 .. OUTER_BLOCK_SIZE {
-        let mut sum = 0.0;
-        for k in 0 .. i {
-          sum += temp[i * OUTER_BLOCK_SIZE + k] * matrix[(i_global + k, j_global + j)];
-        }
-        matrix.write((i_global + i, j_global + j), matrix[(i_global + i, j_global + j)] - sum);
-      }
-    }
+    border_top_chunk::<BORDER_BLOCK_SIZE>(data.offset, data.matrix, &temp, chunk_index as usize);
   });
 }
 
@@ -200,37 +145,15 @@ fn task_inner_go(_workers: &Workers, data: &Data, loop_arguments: LoopArguments)
   let remaining = data.matrix.size() - data.offset - OUTER_BLOCK_SIZE;
   let rows = (remaining + INNER_BLOCK_SIZE_ROWS - 1) / INNER_BLOCK_SIZE_ROWS;
 
-  workassisting_loop!(loop_arguments, |chunk_index| {
-    let mut temp_top = [0.0; INNER_BLOCK_SIZE_COLUMNS * OUTER_BLOCK_SIZE];
-    let mut temp_left = [0.0; OUTER_BLOCK_SIZE * INNER_BLOCK_SIZE_ROWS];
-    let mut sum = [0.0; max(INNER_BLOCK_SIZE_COLUMNS, INNER_BLOCK_SIZE_ROWS)];
+  let mut temp_top = Align([0.0; INNER_BLOCK_SIZE_COLUMNS * OUTER_BLOCK_SIZE]);
+  let mut sum = Align([0.0; max(INNER_BLOCK_SIZE_COLUMNS, INNER_BLOCK_SIZE_ROWS)]);
+  let mut temp_index = 0;
 
+  workassisting_loop!(loop_arguments, |chunk_index| {
+    interior_chunk::<INNER_BLOCK_SIZE_ROWS, INNER_BLOCK_SIZE_COLUMNS>
+      (data.offset, rows, data.matrix, &mut temp_index, &mut temp_top.0, &mut sum.0, chunk_index as usize);
     let i_global = data.offset + OUTER_BLOCK_SIZE + INNER_BLOCK_SIZE_ROWS * (chunk_index as usize % rows);
     let j_global = data.offset + OUTER_BLOCK_SIZE + INNER_BLOCK_SIZE_COLUMNS * (chunk_index as usize / rows);
-
-    for i in 0 .. OUTER_BLOCK_SIZE {
-      for j in 0 .. INNER_BLOCK_SIZE_COLUMNS {
-        temp_top[i * INNER_BLOCK_SIZE_COLUMNS + j] = data.matrix[(i + data.offset, j + j_global)];
-      }
-    }
-
-    for i in 0 .. INNER_BLOCK_SIZE_ROWS {
-      for j in 0 .. OUTER_BLOCK_SIZE {
-        temp_left[i * OUTER_BLOCK_SIZE + j] = data.matrix[(i + i_global, j + data.offset)];
-      }
-    }
-
-    for i in 0 .. INNER_BLOCK_SIZE_ROWS {
-      for k in 0 .. OUTER_BLOCK_SIZE {
-        for j in 0 .. INNER_BLOCK_SIZE_COLUMNS {
-          sum[j] += temp_left[OUTER_BLOCK_SIZE * i + k] * temp_top[INNER_BLOCK_SIZE_COLUMNS * k + j];
-        }
-      }
-      for j in 0 .. INNER_BLOCK_SIZE_COLUMNS {
-        data.matrix.write((i + i_global, j + j_global), data.matrix[(i + i_global, j + j_global)] - sum[j]);
-        sum[j] = 0.0;
-      }
-    }
 
     if i_global < data.offset + 2 * OUTER_BLOCK_SIZE && j_global < data.offset + 2 * OUTER_BLOCK_SIZE {
       let old_remaining = data.synchronisation_var.fetch_sub(1, Ordering::AcqRel);

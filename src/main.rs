@@ -4,11 +4,15 @@ mod utils;
 
 use std::path::Path;
 
+use utils::thread_pinning::AFFINITY_MAPPING;
+
 fn main() {
   let open_mp_enabled = build_open_mp();
   if !open_mp_enabled {
     println!("Running the benchmarks without the OpenMP implementations");
   }
+
+  affinity::set_thread_affinity([AFFINITY_MAPPING[0]]).unwrap();
   cases::lu::run(open_mp_enabled);
   cases::quicksort::run(open_mp_enabled);
   cases::prime::run(open_mp_enabled);
