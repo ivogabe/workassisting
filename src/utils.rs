@@ -4,4 +4,5 @@ pub mod deque_stealer;
 pub mod rayon;
 pub mod loops;
 pub mod matrix;
-pub mod  thread_pinning;
+pub mod ptr;
+pub mod thread_pinning;

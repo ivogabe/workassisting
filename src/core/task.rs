@@ -1,7 +1,6 @@
 use core::fmt::Debug;
 use core::mem;
-use core::sync::atomic::{ AtomicU32, AtomicU64, Ordering };
-use core::mem::ManuallyDrop;
+use core::sync::atomic::{ AtomicI32, AtomicU32 };
 use std::alloc::Layout;
 use core::mem::forget;
 use core::ops::{Drop, Deref, DerefMut};
@@ -13,7 +12,18 @@ pub struct TaskObject {
   pub function: fn(workers: &Workers, data: &(), loop_arguments: LoopArguments) -> (),
   pub continuation: fn(workers: &Workers, data: &()) -> (),
   pub data_offset: usize,
-  pub counters: Counters, // active_threads and work_index
+  // The number of active_threads, offset by the tag in the activities array.
+  // If this task is present in activities, then:
+  //   - active_threads contains - (the number of finished threads), thus non-positive.
+  //   - the tag in activities (in AtomicTaggedPtr) contains the number of threads that have started working on this task
+  // When a thread removes this task from activities, it will assure that:
+  //   - active_threads contains the number of active threads, thus is non-negative
+  // When active_threads becomes zero after a decrement:
+  //   - the task is not present in activities.
+  //   - no thread is still working on this task.
+  // Hence we can run the continuation function and deallocate the task.
+  pub active_threads: AtomicI32,
+  pub work_index: AtomicU32,
   pub work_size: u32,
   pub layout: Layout, // The layout of the TaskObject extended with the data. Needed to deallocate them
 }
@@ -27,7 +37,7 @@ impl Debug for Task {
 
 impl Debug for TaskObject {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-    write!(f, "Task:\n  function {:?}\n  continuation {:?}\n size {:?}\n index {:?}\n active threads {:?}", self.function as *const (), self.continuation as *const (), self.work_size, self.counters.work_index(), self.counters.active_threads())
+    write!(f, "Task:\n  function {:?}\n  continuation {:?}\n size {:?}\n index {:?}\n active threads {:?}", self.function as *const (), self.continuation as *const (), self.work_size, self.work_index, self.active_threads)
   }
 }
 
@@ -52,7 +62,8 @@ impl Task {
         continuation: mem::transmute(continuation),
         data_offset,
         work_size,
-        counters: Counters::new(1, 1),
+        active_threads: AtomicI32::new(0),
+        work_index: AtomicU32::new(1),
         layout
       };
       *data_ptr = data;
@@ -78,7 +89,8 @@ impl Task {
         continuation: mem::transmute(function),
         data_offset,
         work_size: 0,
-        counters: Counters::new(1, 0),
+        active_threads: AtomicI32::new(0),
+        work_index: AtomicU32::new(0),
         layout
       };
       *data_ptr = data;
@@ -126,7 +138,6 @@ impl Deref for Task {
   }
 }
 
-
 impl DerefMut for Task {
   fn deref_mut(&mut self) -> &mut Self::Target {
     unsafe { &mut *self.0 }
@@ -142,43 +153,4 @@ pub struct LoopArguments<'a> {
   pub work_index: &'a AtomicU32,
   pub empty_signal: EmptySignal<'a>,
   pub first_index: u32,
-}
-
-#[cfg(target_endian = "big")]
-const COUNTER_IDX_THREADS: usize = 0;
-#[cfg(target_endian = "little")]
-const COUNTER_IDX_THREADS: usize = 1;
-
-const COUNTER_IDX_WORK: usize = 1 - COUNTER_IDX_THREADS;
-
-pub union Counters {
-  // In the 32 most significant bits, we store the number of active threads.
-  // In the 32 least significant bits, we store the index of the next work item.
-  //
-  // Items in a union need to implement Copy, which Atomics do not have.
-  // We wrap it in ManuallyDrop as a work-around.
-  // Atomics don't have a Drop instance, so it is safe to use ManuallyDrop.
-  single: ManuallyDrop<AtomicU64>,
-  separate: [ManuallyDrop<AtomicU32>; 2]
-}
-
-impl Counters {
-  pub fn new(active_threads: u32, work_index: u32) -> Counters {
-    Counters{ single: ManuallyDrop::new(AtomicU64::new(((active_threads as u64) << 32) | work_index as u64)) }
-  }
-
-  pub fn active_threads(&self) -> &AtomicU32 {
-    unsafe { &self.separate[COUNTER_IDX_THREADS] }
-  }
-  pub fn work_index(&self) -> &AtomicU32 {
-    unsafe { &self.separate[COUNTER_IDX_WORK] }
-  }
-  pub fn combined(&self) -> &AtomicU64 {
-    unsafe { &self.single }
-  }
-
-  pub fn fetch_add(&self, active_threads: u32, work_index: u32, order: Ordering) -> (u32, u32) {
-    let old = self.combined().fetch_add(((active_threads as u64) << 32) | work_index as u64, order);
-    ((old >> 32) as u32, (old & 0xFFFFFFFF) as u32)
-  }
 }
