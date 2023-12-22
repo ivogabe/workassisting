@@ -52,20 +52,30 @@ pub fn partition(array: &[AtomicU32]) -> usize {
 }
 
 pub fn insertion_sort<'a>(array: &'a [AtomicU32]) {
-  for idx in 1 .. array.len() {
-    let value = array[idx].load(Ordering::Relaxed);
-    // Find position for this element.
+  let len = array.len();
+  if len <= 1 { return; }
+  let mut data = [u32::MAX; INSERTION_SORT_CUTOFF];
+  assert!(len <= INSERTION_SORT_CUTOFF);
+  for (idx, value) in array.iter().enumerate() {
+    data[idx] = value.load(Ordering::Relaxed);
+  }
+
+  for idx in 1 .. len {
+    let value = data[idx];
     let mut j = idx;
     while j > 0 {
       j -= 1;
-      let current = array[j].load(Ordering::Relaxed);
+      let current = data[j];
       if current <= value {
         j += 1;
         break;
       }
-      array[j + 1].store(current, Ordering::Relaxed);
+      data[j + 1] = current;
     }
-    array[j].store(value, Ordering::Relaxed);
+    data[j] = value;
+  }
+  for (idx, value) in array.iter().enumerate() {
+    value.store(data[idx], Ordering::Relaxed);
   }
 }
 

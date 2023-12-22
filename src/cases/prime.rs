@@ -1,7 +1,7 @@
 use core::sync::atomic::{Ordering, AtomicU32};
 use rayon::prelude::*;
 use crate::core::worker::*;
-use crate::utils::benchmark::{benchmark, ChartStyle, Nesting};
+use crate::utils::benchmark::{benchmark, ChartStyle, Nesting, ChartLineStyle};
 use crate::utils::thread_pinning::AFFINITY_MAPPING;
 use num_format::{Locale, ToFormattedString};
 
@@ -26,8 +26,9 @@ fn run_on(open_mp_enabled: bool, style: ChartStyle, start: u64, count: u64) {
   .rayon(None, || reference_parallel(start, count))
   .static_parallel(|thread_count, pinned| static_parallel(start, count, thread_count, pinned))
   .work_stealing(|thread_count| deque::count_primes(start, count, thread_count))
-  .open_mp(open_mp_enabled, "OpenMP (static)", 5, "prime-static", Nesting::Flat, start as usize, Some((start + count) as usize))
-  .open_mp(open_mp_enabled, "OpenMP (dynamic)", 4, "prime-dynamic", Nesting::Flat, start as usize, Some((start + count) as usize))
+  .open_mp(open_mp_enabled, "OpenMP (static)", ChartLineStyle::OmpStatic, "prime-static", Nesting::Flat, start as usize, Some((start + count) as usize))
+  .open_mp(open_mp_enabled, "OpenMP (dynamic)", ChartLineStyle::OmpDynamic, "prime-dynamic", Nesting::Flat, start as usize, Some((start + count) as usize))
+  .open_mp(open_mp_enabled, "OpenMP (taskloop)", ChartLineStyle::OmpTask, "prime-taskloop", Nesting::Flat, start as usize, Some((start + count) as usize))
   .our(|thread_count| {
     let counter = AtomicU32::new(0);
     let task = our::create_task(&counter, start, count);
@@ -52,10 +53,10 @@ pub fn reference_parallel(start: u64, count: u64) -> u32 {
 
 pub fn static_parallel(start: u64, count: u64, thread_count: usize, pinned: bool) -> u32 {
   let result = AtomicU32::new(0);
-  crossbeam::scope(|s| {
+  std::thread::scope(|s| {
     let result_ref = &result;
     for thread_index in 0 .. thread_count {
-      s.spawn(move |_| {
+      s.spawn(move || {
         if pinned {
           affinity::set_thread_affinity([AFFINITY_MAPPING[thread_index]]).unwrap();
         }
@@ -70,7 +71,7 @@ pub fn static_parallel(start: u64, count: u64, thread_count: usize, pinned: bool
         result_ref.fetch_add(local_count, Ordering::Relaxed);
       });
     }
-  }).unwrap();
+  });
   result.load(Ordering::Relaxed)
 }
 

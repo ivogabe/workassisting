@@ -1,3 +1,3 @@
 cd "$(dirname "$0")"
 mkdir -p build
-g++ -fopenmp -std=c++11 -O3 main.cpp cases/prime.cpp cases/quicksort.cpp cases/sum.cpp -o build/main
+clang++ -fopenmp -std=c++11 -O3 main.cpp cases/prime.cpp cases/quicksort.cpp cases/sum.cpp -o build/main

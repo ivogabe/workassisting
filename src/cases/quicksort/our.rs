@@ -4,6 +4,7 @@
 // - Two sections are sorted in parallel with task parallelism
 
 use core::sync::atomic::{Ordering, AtomicU32, AtomicU64};
+use crate::cases::quicksort::count_recursive_calls;
 use crate::cases::quicksort::parallel_partition_chunk;
 use crate::core::worker::*;
 use crate::core::workassisting_loop::*;
@@ -20,7 +21,7 @@ struct Data<'a> {
   input_output_flipped: bool,
   // 32 least significant bits are used for the number of items on the left side,
   // 32 most significat bits are used for the number of items on the right side
-  counters: AtomicU64
+  counters: AtomicU64, //crossbeam::utils::CachePadded<AtomicU64>
 }
 
 pub fn create_task<'a>(pending_tasks: &'a AtomicU64, input: &'a [AtomicU32], output: &'a [AtomicU32], input_output_flipped: bool) -> Option<Task> {
@@ -34,8 +35,6 @@ pub fn create_task<'a>(pending_tasks: &'a AtomicU64, input: &'a [AtomicU32], out
     }
     return None;
   }
-
-  pending_tasks.fetch_add(1, Ordering::Relaxed);
 
   if input.len() < SEQUENTIAL_CUTOFF {
     return Some(sequential::create_task(pending_tasks, input, if input_output_flipped { None } else { Some(output) }));
@@ -74,8 +73,11 @@ fn partition_run(_workers: &Workers, task: *const TaskObject<Data>, loop_argumen
 
   let pivot = data.input[0].load(Ordering::Relaxed);
 
+  let input = data.input;
+  let output = data.output;
+  let counters = &data.counters;
   workassisting_loop!(loop_arguments, |chunk_index| {
-    parallel_partition_chunk(data.input, data.output, pivot, &data.counters, chunk_index as usize);
+    parallel_partition_chunk(input, output, pivot, counters, chunk_index as usize);
   });
 }
 
@@ -91,13 +93,22 @@ fn partition_finish(workers: &Workers, task: *mut TaskObject<Data>) {
   (if data.input_output_flipped { data.input } else { data.output })
     [count_left as usize].store(pivot, Ordering::Relaxed);
 
+  match count_recursive_calls(data.input.len(), count_left as usize) {
+    2 => {
+      data.pending_tasks.fetch_add(1, Ordering::Relaxed);
+    },
+    0 => {
+      if data.pending_tasks.fetch_sub(1, Ordering::Relaxed) == 1 {
+        workers.finish();
+      }
+    },
+    _ => {} // No work to be done if there is one recursive call,
+    // As the number of pending tasks doesn't change.
+  }
+
   for (from, to) in [(0, count_left as usize), (count_left as usize + 1, data.input.len())] {
     if let Some(task) = create_task(data.pending_tasks, &data.output[from .. to], &data.input[from .. to], !data.input_output_flipped) {
       workers.push_task(task);
     }
-  }
-
-  if data.pending_tasks.fetch_sub(1, Ordering::Relaxed) == 1 {
-    workers.finish();
   }
 }

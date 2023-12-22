@@ -2,7 +2,7 @@ use core::panic;
 use core::sync::atomic::AtomicU64;
 use crate::utils::matrix::SquareMatrix;
 use crate::core::worker::Workers;
-use crate::utils::benchmark::{benchmark, ChartStyle};
+use crate::utils::benchmark::{benchmark, ChartStyle, ChartLineStyle};
 use num_format::{Locale, ToFormattedString};
 
 pub mod our;
@@ -70,7 +70,7 @@ fn run_on(openmp_enabled: bool, size: usize, matrix_count: usize) {
     }
     workstealing::run(&matrices, &pending, thread_count);
   })
-  .open_mp_lud(openmp_enabled, "OpenMP", 5, &filename(size), matrix_count)
+  .open_mp_lud(openmp_enabled, "OpenMP", ChartLineStyle::OmpDynamic, &filename(size), matrix_count)
   .our(|thread_count| {
     for i in 0 .. matrix_count {
       input.copy_to(&mut matrices[i].0);

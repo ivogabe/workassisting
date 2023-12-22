@@ -45,6 +45,20 @@ uint64_t case_sum_array_static(uint64_t* array, uint64_t size) {
   return sum;
 }
 
+uint64_t case_sum_array_taskloop(uint64_t* array, uint64_t size) {
+  uint64_t sum = 0;
+  #pragma omp parallel
+  #pragma omp single
+  {
+    #pragma omp taskloop reduction(+:sum) grainsize(8192)
+    for (uint64_t i=0; i<size; i++) {
+      sum = sum + array[i];
+    }
+  }
+  fprintf(stderr, "%" PRIu64 "\n", sum);
+  return sum;
+}
+
 uint64_t case_sum_function_dynamic(uint64_t size) {
   uint64_t sum = 0;
   #pragma omp parallel for reduction(+:sum) schedule(dynamic,4096)
@@ -60,6 +74,20 @@ uint64_t case_sum_function_static(uint64_t size) {
   #pragma omp parallel for reduction(+:sum) schedule(static,4096)
   for (uint64_t i=0; i<size; i++) {
     sum = sum + randomize(i);
+  }
+  fprintf(stderr, "%" PRIu64 "\n", sum);
+  return sum;
+}
+
+uint64_t case_sum_function_taskloop(uint64_t size) {
+  uint64_t sum = 0;
+  #pragma omp parallel
+  #pragma omp single
+  {
+    #pragma omp taskloop reduction(+:sum) grainsize(4096)
+    for (uint64_t i=0; i<size; i++) {
+      sum = sum + randomize(i);
+    }
   }
   fprintf(stderr, "%" PRIu64 "\n", sum);
   return sum;

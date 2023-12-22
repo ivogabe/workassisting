@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <atomic>
 
-#define BLOCK_SIZE 1024
+#define BLOCK_SIZE 512
 #define DATAPAR_CUTOFF 32768
 #define SEQUENTIAL_CUTOFF 8192
 #define INSERTION_SORT_CUTOFF 20
@@ -38,27 +38,27 @@ void parallel_partition_block(uint32_t* input, uint32_t* output, int size, uint3
   int left_count = 0;
   int right_count = 0;
   for (int i = 0; i < end - start; i++) {
-    values[i] = input[start + i];
-    if (values[i] < pivot) {
+    uint32_t value = input[start + i];
+    int destination;
+    if (value < pivot) {
+      destination = left_count;
       left_count += 1;
     } else {
+      destination = right_count;
       right_count += 1;
     }
+    values[destination] = value;
   }
 
-  uint64_t counters_value = std::atomic_fetch_add_explicit(counters, ((uint64_t) right_count << 32) | left_count, std::memory_order_relaxed);
+  uint64_t counters_value = std::atomic_fetch_add_explicit(counters, ((uint64_t) right_count << 32) | left_count, std::memory_order_seq_cst);
   int left_offset = counters_value & 0xFFFFFFFF;
-  int right_offset = size - 1 - (counters_value >> 32);
-  for (int i = 0; i < end - start; i++) {
-    int destination;
-    if (values[i] < pivot) {
-      destination = left_offset;
-      left_offset++;
-    } else {
-      destination = right_offset;
-      right_offset--;
-    }
-    output[destination] = values[i];
+  int right_offset = size - right_count - (counters_value >> 32);
+
+  for (int i = 0; i < left_count; i++) {
+    output[left_offset + i] = values[i];
+  }
+  for (int i = 0; i < right_count; i++) {
+    output[right_offset + i] = values[i];
   }
 }
 
@@ -73,6 +73,31 @@ int parallel_partition(uint32_t* input, uint32_t* output, int size) {
   #pragma omp parallel for schedule(dynamic,1)
   for (int block_index = 0; block_index < block_count; block_index++) {
     parallel_partition_block(input, output, size, pivot, &counters, block_index);
+  }
+
+  uint64_t counters_value = std::atomic_load_explicit(&counters, std::memory_order_relaxed);
+  int count_left = counters & 0xFFFFFFFF;
+  int count_right = counters >> 32;
+  if (count_left + count_right + 1 != size) {
+    printf("Size mismatch\n");
+  }
+
+  // Return the position of the pivot
+  return count_left;
+}
+
+int parallel_partition_taskloop(uint32_t* input, uint32_t* output, int size) {
+  int block_count = (size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+  uint32_t pivot = input[0];
+
+  std::atomic<uint64_t> counters;
+  std::atomic_store_explicit(&counters, 0, std::memory_order_relaxed);
+  std::atomic<uint64_t>* counters_ptr = &counters;
+
+  #pragma omp taskloop grainsize(1)
+  for (int block_index = 0; block_index < block_count; block_index++) {
+    parallel_partition_block(input, output, size, pivot, counters_ptr, block_index);
   }
 
   uint64_t counters_value = std::atomic_load_explicit(&counters, std::memory_order_relaxed);
@@ -184,18 +209,6 @@ void quicksort(uint32_t* input, uint32_t* output, bool input_output_flipped, int
 
   int pivot_idx = parallel_partition(input, output, size);
 
-  // Check partitioning
-  for (int i = 0; i < pivot_idx; i++) {
-    if (output[i] > input[0]) {
-      printf("Err A\n");
-    }
-  }
-  for (int i = pivot_idx + 1; i < size; i++) {
-    if (output[i] < input[0]) {
-      printf("Err B\n");
-    }
-  }
-
   // Store pivot at correct index. Since input and output constantly change roles, make sure that we write to the correct array.
   if (input_output_flipped) {
     input[pivot_idx] = input[0];
@@ -211,12 +224,53 @@ void quicksort(uint32_t* input, uint32_t* output, bool input_output_flipped, int
   quicksort(&output[pivot_idx + 1], &input[pivot_idx + 1], !input_output_flipped, size - pivot_idx - 1);
 }
 
+void quicksort_taskloop(uint32_t* input, uint32_t* output, bool input_output_flipped, int size) {
+  if (size < DATAPAR_CUTOFF) {
+    if (!input_output_flipped) {
+      // Copy input to output, then sort output
+      for (int i = 0; i < size; i++) {
+        output[i] = input[i];
+      }
+      only_task_par_quicksort(output, size);
+    } else {
+      only_task_par_quicksort(input, size);
+    }
+    return;
+  }
+
+  int pivot_idx = parallel_partition_taskloop(input, output, size);
+
+  // Store pivot at correct index. Since input and output constantly change roles, make sure that we write to the correct array.
+  if (input_output_flipped) {
+    input[pivot_idx] = input[0];
+  } else {
+    output[pivot_idx] = input[0];
+  }
+
+  // Recursion
+  #pragma omp task
+  quicksort_taskloop(output, input, !input_output_flipped, pivot_idx);
+
+  #pragma omp task
+  quicksort_taskloop(&output[pivot_idx + 1], &input[pivot_idx + 1], !input_output_flipped, size - pivot_idx - 1);
+}
+
 void case_quicksort(uint32_t* input, uint32_t* output, int size) {
   fill(input, size);
   #pragma omp parallel
   #pragma omp single
   {
     quicksort(input, output, false, size);
+    #pragma omp taskwait
+  }
+}
+
+void case_quicksort_taskloop(uint32_t* input, uint32_t* output, int size) {
+  fill(input, size);
+  #pragma omp parallel
+  #pragma omp single
+  {
+    quicksort_taskloop(input, output, false, size);
     #pragma omp taskwait
   }
 }

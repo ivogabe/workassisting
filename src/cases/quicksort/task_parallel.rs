@@ -8,15 +8,13 @@ use core::sync::atomic::{Ordering, AtomicU32, AtomicU64};
 use crate::core::task::{Task, TaskObject};
 use crate::core::worker::Workers;
 
-use crate::cases::quicksort::SEQUENTIAL_CUTOFF;
+use crate::cases::quicksort::{SEQUENTIAL_CUTOFF, count_recursive_calls};
 use crate::cases::quicksort::sequential;
 
 pub fn create_task<'a>(pending_tasks: &'a AtomicU64, array: &'a [AtomicU32]) -> Option<Task> {
   if array.len() <= 1 {
     return None
   }
-
-  pending_tasks.fetch_add(1, Ordering::Relaxed);
 
   if array.len() < SEQUENTIAL_CUTOFF {
     return Some(sequential::create_task(pending_tasks, array, None));
@@ -65,14 +63,23 @@ fn run_go(workers: &Workers, pending_tasks: &AtomicU64, array: &[AtomicU32]) {
   array[0].store(array[right].load(Ordering::Relaxed), Ordering::Relaxed);
   array[right].store(pivot, Ordering::Relaxed);
 
+  match count_recursive_calls(array.len(), right as usize) {
+    2 => {
+      pending_tasks.fetch_add(1, Ordering::Relaxed);
+    },
+    0 => {
+      if pending_tasks.fetch_sub(1, Ordering::Relaxed) == 1 {
+        workers.finish();
+      }
+    },
+    _ => {} // No work to be done if there is one recursive call,
+    // As the number of pending tasks doesn't change.
+  }
+
   for (start, end) in [(0, right), (right + 1, array.len())] {
     if let Some(task) = create_task(pending_tasks, &array[start .. end]) {
       workers.push_task(task);
     }
-  }
-
-  if pending_tasks.fetch_sub(1, Ordering::Relaxed) == 1 {
-    workers.finish();
   }
 }
 

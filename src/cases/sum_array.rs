@@ -1,7 +1,7 @@
 use core::sync::atomic::{Ordering, AtomicU64};
 use rayon::prelude::*;
 use crate::core::worker::*;
-use crate::utils::benchmark::{benchmark, ChartStyle, Nesting};
+use crate::utils::benchmark::{benchmark, ChartStyle, Nesting, ChartLineStyle};
 use crate::utils::thread_pinning::AFFINITY_MAPPING;
 use num_format::{Locale, ToFormattedString};
 
@@ -27,8 +27,9 @@ pub fn run(open_mp_enabled: bool) {
       .work_stealing(|thread_count| {
         deque::sum(&array, thread_count)
       })
-      .open_mp(open_mp_enabled, "OpenMP (static)", 5, "sum-array-static", Nesting::Flat, count as usize, None)
-      .open_mp(open_mp_enabled, "OpenMP (dynamic)", 4, "sum-array-dynamic", Nesting::Flat, count as usize, None)
+      .open_mp(open_mp_enabled, "OpenMP (static)", ChartLineStyle::OmpStatic, "sum-array-static", Nesting::Flat, count as usize, None)
+      .open_mp(open_mp_enabled, "OpenMP (dynamic)", ChartLineStyle::OmpDynamic, "sum-array-dynamic", Nesting::Flat, count as usize, None)
+      .open_mp(open_mp_enabled, "OpenMP (taskloop)", ChartLineStyle::OmpTask, "sum-array-taskloop", Nesting::Flat, count as usize, None)
       .our(|thread_count| {
         let counter = AtomicU64::new(0);
         let task = our::create_task(&counter, &array);
@@ -52,10 +53,10 @@ pub fn reference_parallel(array: &[u64]) -> u64 {
 
 pub fn static_parallel(array: &[u64], thread_count: usize, pinned: bool) -> u64 {
   let result = AtomicU64::new(0);
-  crossbeam::scope(|s| {
+  std::thread::scope(|s| {
     let result_ref = &result;
     for thread_index in 0 .. thread_count {
-      s.spawn(move |_| {
+      s.spawn(move || {
         if pinned {
           affinity::set_thread_affinity([AFFINITY_MAPPING[thread_index]]).unwrap();
         }
@@ -68,7 +69,7 @@ pub fn static_parallel(array: &[u64], thread_count: usize, pinned: bool) -> u64 
         result_ref.fetch_add(sum, Ordering::Relaxed);
       });
     }
-  }).unwrap();
+  });
   result.load(Ordering::Relaxed)
 }
 

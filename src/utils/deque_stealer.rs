@@ -46,18 +46,18 @@ pub fn run_with_workstealing(initial_tasks: Vec<Task>, thread_count: usize) {
 
   let finished = AtomicBool::new(false);
 
-  crossbeam::scope(|s| {
+  std::thread::scope(|s| {
     for (thread_index, worker) in workers.into_iter().enumerate() {
       let stealers_ref = &stealers;
       let finished_ref = &finished;
-      s.spawn(move |_| {
+      s.spawn(move || {
         affinity::set_thread_affinity([AFFINITY_MAPPING[thread_index]]).unwrap();
         while let Some(item) = claim(thread_index, thread_count, &worker, stealers_ref, finished_ref) {
           execute_task(Worker{ worker: &worker, finished: finished_ref }, item);
         }
       });
     };
-  }).unwrap();
+  });
 }
 
 fn claim<T>(thread_index: usize, thread_count: usize, local: &deque::Worker<T>, stealers: &[deque::Stealer<T>], finished: &AtomicBool) -> Option<T> {

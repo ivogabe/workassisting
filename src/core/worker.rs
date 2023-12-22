@@ -27,7 +27,7 @@ impl<'a> Workers<'a> {
 
     let is_finished = AtomicBool::new(false);
 
-    crossbeam::scope(|s| {
+    std::thread::scope(|s| {
       for (thread_index, worker) in workers.into_iter().enumerate() {
         let workers = Workers{
           is_finished: &is_finished,
@@ -36,12 +36,12 @@ impl<'a> Workers<'a> {
           stealers: &stealers,
           activities: &activities
         };
-        s.spawn(move |_| {
+        s.spawn(move || {
           affinity::set_thread_affinity([AFFINITY_MAPPING[thread_index]]).unwrap();
           workers.do_work(thread_index);
         });
       }
-    }).unwrap();
+    });
   }
 
   pub fn finish(&self) {

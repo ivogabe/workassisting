@@ -5,6 +5,7 @@ use crate::core::task::*;
 use crate::core::workassisting_loop::*;
 use crate::specialize_if;
 use crate::utils::array::alloc_undef_u32_array;
+use crate::utils::benchmark::ChartLineStyle;
 use crate::utils::benchmark::{benchmark, ChartStyle, Nesting};
 
 pub mod our;
@@ -31,8 +32,8 @@ fn run_on(open_mp_enabled: bool, size: usize) {
     &name,
     || reference_sequential_single(&array1)
   )
-  .parallel("Sequential partition", 9, false, |thread_count| {
-    let pending_tasks = AtomicU64::new(0);
+  .parallel("Sequential partition", ChartLineStyle::SequentialPartition, |thread_count| {
+    let pending_tasks = AtomicU64::new(1);
     Workers::run(thread_count, create_task_reset(&array1, &pending_tasks, Kind::OnlyTaskParallel));
     assert_eq!(pending_tasks.load(Ordering::Relaxed), 0);
     output(&array1)
@@ -41,10 +42,10 @@ fn run_on(open_mp_enabled: bool, size: usize) {
     deque_parallel_partition::reset_and_sort(&array1, &array2, thread_count);
     output(&array2)
   })
-  .open_mp(open_mp_enabled, "OpenMP (balance threads)", 5, "quicksort", Nesting::NestedSplit, size, None)
-  .open_mp(open_mp_enabled, "OpenMP (oversubscribe)", 4, "quicksort", Nesting::NestedOversaturate, size, None)
+  .open_mp(open_mp_enabled, "OpenMP (nested)", ChartLineStyle::OmpDynamic, "quicksort", Nesting::Nested, size, None)
+  .open_mp(open_mp_enabled, "OpenMP (tasks)", ChartLineStyle::OmpTask, "quicksort-taskloop", Nesting::Flat, size, None)
   .our(|thread_count| {
-    let pending_tasks = AtomicU64::new(0);
+    let pending_tasks = AtomicU64::new(1);
     Workers::run(thread_count, create_task_reset(&array1, &pending_tasks, Kind::DataParallel(&array2)));
     output(&array2)
   });
@@ -117,36 +118,63 @@ fn reference_sequential_single(array: &[AtomicU32]) -> u64 {
   output(array)
 }
 
+#[repr(C)]
+#[repr(align(64))]
+pub struct Align<T>(T);
+
 #[inline(always)]
 pub fn parallel_partition_chunk(input: &[AtomicU32], output: &[AtomicU32], pivot: u32, counters: &AtomicU64, chunk_index: usize) {
   // Loop starts at 1, as element 0 is the pivot.
-  let start = 1 + chunk_index as usize * BLOCK_SIZE ;
+  let start = 1 + chunk_index as usize * BLOCK_SIZE;
+  assert_eq!(input.len(), output.len());
 
-  specialize_if!(start + BLOCK_SIZE <= input.len(), start + BLOCK_SIZE, input.len(), |end| {
-    let mut values = [0; BLOCK_SIZE];
+  // Treat the input as an immutable array. This thread, nor any other thread, will modify this part of the input
+  // at this moment.
+  let input1: &[u32] = unsafe { std::mem::transmute(input) };
+
+  specialize_if!(start + BLOCK_SIZE <= input.len(), BLOCK_SIZE, input.len() - start, |end| {
+    let mut values = Align([0; BLOCK_SIZE]);
     let mut left_count = 0;
-    let mut right_count = 0;
-    for i in 0 .. end - start {
-      values[i] = input[start + i].load(Ordering::Relaxed);
-      if values[i] < pivot {
+    for (i, value) in input1[start .. start + end].iter().copied().enumerate() {
+      let destination;
+      if value < pivot {
+        destination = left_count;
         left_count += 1;
       } else {
-        right_count += 1;
+        destination = end as u64 - (i as u64 - left_count) - 1;
+      }
+      values.0[destination as usize] = value;
+    }
+    let right_count = end as u64 - left_count;
+    let counters_value = counters.fetch_add((right_count << 32) | left_count, Ordering::SeqCst);
+    let left_offset = (counters_value & 0xFFFFFFFF) as usize;
+    let right_offset = input.len() - right_count as usize - (counters_value >> 32) as usize;
+    if left_count != 0 {
+      unsafe {
+        std::ptr::copy_nonoverlapping(
+          &values.0[0],
+          output[left_offset].as_ptr(),
+          left_count as usize);
       }
     }
-    let counters_value = counters.fetch_add((right_count << 32) | left_count, Ordering::Relaxed);
-    let mut left_offset = (counters_value & 0xFFFFFFFF) as usize;
-    let mut right_offset = input.len() - 1 - (counters_value >> 32) as usize;
-    for i in 0 .. end - start {
-      let destination;
-      if values[i] < pivot {
-        destination = left_offset;
-        left_offset += 1;
-      } else {
-        destination = right_offset;
-        right_offset -= 1;
+    if right_count != 0 {
+      unsafe {
+        std::ptr::copy_nonoverlapping(
+          &values.0[left_count as usize],
+          output[right_offset].as_ptr(),
+          right_count as usize);
       }
-      output[destination].store(values[i], Ordering::Relaxed);
     }
   });
+}
+pub fn count_recursive_calls(len: usize, pivot: usize) -> usize {
+  let mut count = 0;
+  if pivot > 1 {
+    // Left segment is non-trivial
+    count += 1;
+  }
+  if len - pivot > 2 {
+    count += 1;
+  }
+  count
 }

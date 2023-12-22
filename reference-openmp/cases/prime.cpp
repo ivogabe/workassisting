@@ -52,3 +52,21 @@ uint32_t case_primes_static(uint64_t from, uint64_t to) {
   fprintf(stderr, "%d\n", (uint32_t) count);
   return (uint32_t) count;
 }
+
+uint32_t case_primes_taskloop(uint64_t from, uint64_t to) {
+  std::atomic_uint count(0);
+  #pragma omp parallel
+  #pragma omp single
+  {
+    uint32_t local_count = 0;
+    #pragma omp taskloop grainsize(32)
+    for (uint64_t i = from; i < to; i++) {
+      if (is_prime(i)) {
+        local_count++;
+      }
+    }
+    count += local_count;
+  }
+  fprintf(stderr, "%d\n", (uint32_t) count);
+  return (uint32_t) count;
+}

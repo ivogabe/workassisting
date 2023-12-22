@@ -5,10 +5,12 @@
 
 use core::sync::atomic::{Ordering, AtomicU32, AtomicU64};
 
-use crate::cases::quicksort::{random, SEQUENTIAL_CUTOFF, DATAPAR_CUTOFF, BLOCK_SIZE};
+use crate::cases::quicksort::{random, SEQUENTIAL_CUTOFF, DATAPAR_CUTOFF, BLOCK_SIZE, parallel_partition_chunk};
 use crate::cases::quicksort::sequential;
 
 use crate::utils::deque_stealer::*;
+
+use super::count_recursive_calls;
 
 pub fn reset_and_sort(input: &[AtomicU32], output: &[AtomicU32], thread_count: usize) {
   let pending_tasks = AtomicU64::new(thread_count as u64);
@@ -38,8 +40,8 @@ struct TaskReset<'a> {
 }
 struct TaskParallelPartition<'a> {
   sort: *mut Sort<'a>,
-  start: usize,
-  end: usize
+  start_block: usize,
+  end_block: usize
 }
 unsafe impl<'a> Send for TaskParallelPartition<'a> {}
 unsafe impl<'a> Sync for TaskParallelPartition<'a> {}
@@ -106,77 +108,63 @@ fn run_recursion_parallel(worker: Worker, data_box: Box<TaskRecursionParallel>) 
   array[0].store(array[pivot_idx].load(Ordering::Relaxed), Ordering::Relaxed);
   array[pivot_idx].store(pivot, Ordering::Relaxed);
 
+  let n = count_recursive_calls(array.len(), pivot_idx as usize);
+  match n {
+    2 => {
+      data.pending_tasks.fetch_add(1, Ordering::Relaxed);
+    },
+    0 => {
+      if data.pending_tasks.fetch_sub(1, Ordering::Relaxed) == 1 {
+        worker.finish();
+      }
+    },
+    _ => {} // No work to be done if there is one recursive call,
+    // As the number of pending tasks doesn't change.
+  }
+
+  let mut m = 0;
   if let Some(t) = create_task_task_parallel(data.pending_tasks, &array[0 .. pivot_idx]) {
     worker.push_task(t);
+    m += 1;
   }
   if let Some(t) = create_task_task_parallel(data.pending_tasks, &array[pivot_idx + 1 ..]) {
     worker.push_task(t);
+    m += 1;
   }
-  if data.pending_tasks.fetch_sub(1, Ordering::Relaxed) == 1 {
-    // The entire sort is sorted
-    worker.finish();
+  if n != m {
+    println!("{}!={}, {} {}", n, m, array.len(), pivot_idx);
   }
 }
 
 fn run_parallel_partition(worker: Worker, data_box: Box<TaskParallelPartition>) {
   let data = *data_box;
-  let mut own_end = data.end;
-  let len = data.end - data.start;
+  let mut own_end = data.end_block;
+  let len = data.end_block - data.start_block;
   let task = unsafe { &*data.sort };
 
-  if len >= 4 * BLOCK_SIZE {
-    let own = BLOCK_SIZE * 2;
+  if len >= 4 {
+    let own = 2;
     let other = len - own;
-    own_end = data.start + own;
+    own_end = data.start_block + own;
 
-    if other < 2 * BLOCK_SIZE {
+    if other < 2 {
       task.reference_count.fetch_add(1, Ordering::Relaxed);
-      let subtask1 = TaskParallelPartition{ sort: data.sort, start: own_end, end: data.end };
+      let subtask1 = TaskParallelPartition{ sort: data.sort, start_block: own_end, end_block: data.end_block };
       worker.push_task(Task::new(run_parallel_partition, Box::new(subtask1)));
     } else {
       task.reference_count.fetch_add(2, Ordering::Relaxed);
       // Choose the length of subtask1 as a multiple of the chunk size
       let mid = own_end + other / 2 / BLOCK_SIZE * BLOCK_SIZE;
-      let subtask1 = TaskParallelPartition{ sort: data.sort, start: own_end, end: mid };
+      let subtask1 = TaskParallelPartition{ sort: data.sort, start_block: own_end, end_block: mid };
       worker.push_task(Task::new(run_parallel_partition, Box::new(subtask1)));
-      let subtask2 = TaskParallelPartition{ sort: data.sort, start: mid, end: data.end };
+      let subtask2 = TaskParallelPartition{ sort: data.sort, start_block: mid, end_block: data.end_block };
       worker.push_task(Task::new(run_parallel_partition, Box::new(subtask2)));
     }
   }
 
   let pivot = task.input[0].load(Ordering::Relaxed);
-  let mut idx = data.start;
-
-  const CHUNK_SIZE: usize = BLOCK_SIZE;
-  while idx < own_end {
-    let mut values = [0; CHUNK_SIZE];
-    let mut left_count = 0;
-    let mut right_count = 0;
-    for i in 0 .. CHUNK_SIZE {
-      if idx + i >= own_end { break; }
-      values[i] = task.input[idx + i].load(Ordering::Relaxed);
-      if values[i] < pivot {
-        left_count += 1;
-      } else {
-        right_count += 1;
-      }
-    }
-    let counters = task.counters.fetch_add((right_count << 32) | left_count, Ordering::Relaxed);
-    let mut left_offset = (counters & 0xFFFFFFFF) as usize;
-    let mut right_offset = task.input.len() - 1 - (counters >> 32) as usize;
-    for i in 0 .. CHUNK_SIZE {
-      if idx + i >= own_end { break; }
-      let destination;
-      if values[i] < pivot {
-        destination = left_offset;
-        left_offset += 1;
-      } else {
-        destination = right_offset;
-        right_offset -= 1;
-      }
-      task.output[destination].store(values[i], Ordering::Relaxed);
-    }
-    idx += CHUNK_SIZE;
+  for idx in data.start_block .. own_end {
+    parallel_partition_chunk(task.input, task.output, pivot, &task.counters, idx);
   }
 
   if task.reference_count.fetch_sub(1, Ordering::AcqRel) == 1 {
@@ -244,7 +232,8 @@ fn create_task<'a>(pending_tasks: &'a AtomicU64, input: &'a [AtomicU32], output:
     reference_count: AtomicU64::new(1),
     counters: AtomicU64::new(0)
   });
-  let subtask = TaskParallelPartition{ sort: Box::into_raw(data), start: 1, end: input.len() };
+  let blocks = (input.len() - 1 + BLOCK_SIZE - 1) / BLOCK_SIZE;
+  let subtask = TaskParallelPartition{ sort: Box::into_raw(data), start_block: 0, end_block: blocks };
 
   Some(Task::new(run_parallel_partition, Box::new(subtask)))
 }
@@ -253,8 +242,6 @@ fn create_task_task_parallel<'a>(pending_tasks: &'a AtomicU64, array: &'a [Atomi
   if array.len() <= 1 {
     return None
   }
-
-  pending_tasks.fetch_add(1, Ordering::Relaxed);
 
   if array.len() < SEQUENTIAL_CUTOFF {
     return Some(Task::new(run_sequential, Box::new(TaskSequential{ pending_tasks, input: array, output: None })));

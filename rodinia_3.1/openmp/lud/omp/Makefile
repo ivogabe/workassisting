@@ -15,13 +15,13 @@ EXECUTABLE      := lud_omp
 SOURCES         := lud.c lud_omp.c ../common/common.c 
 
 # ------------  compiler  ------------------------------------------------------
-CC              := gcc
-CXX             := g++
+CC              := clang
+CXX             := clang++
 
 # ------------  compiler flags  ------------------------------------------------
 DEBUG_CFLAGS    := -Wall -O0 -g
 RELEASE_CFLAGS  := -Wall -O3 
-COMMON_CFLAGS   := -fopenmp
+COMMON_CFLAGS   := -fopenmp -march=native
 
 # ------------  compiler defs  ------------------------------------------------
 DEBUG_CDEFS    := 
