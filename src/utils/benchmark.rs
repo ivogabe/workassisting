@@ -66,7 +66,7 @@ pub enum Nesting {
 pub fn benchmark<T: Debug + Eq, Ref: FnMut() -> T>(chart_style: ChartStyle, name: &str, reference: Ref) -> Benchmarker<T> {
   println!("");
   println!("Benchmark {}", name);
-  let (expected, reference_time) = time(50, reference);
+  let (expected, reference_time) = time(100, reference);
   println!("Sequential   {} ms", reference_time / 1000);
   Benchmarker{ chart_style, name: name.to_owned(), reference_time, expected, output: vec![] }
 }
@@ -99,7 +99,7 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
   }
 
   pub fn sequential<Seq: FnMut() -> T>(self, name: &str, sequential: Seq) -> Self {
-    let (value, time) = time(50, sequential);
+    let (value, time) = time(100, sequential);
     assert_eq!(self.expected, value);
 
     let relative = self.reference_time as f32 / time as f32;
@@ -116,7 +116,7 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
     println!("{}", name);
     let mut results = vec![];
     for thread_count in THREAD_COUNTS {
-      let (value, time) = time(50, || parallel(thread_count));
+      let (value, time) = time(100, || parallel(thread_count));
       assert_eq!(self.expected, value);
       let relative = self.reference_time as f32 / time as f32;
       results.push(relative);
@@ -174,7 +174,7 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
       let affinity = (0 .. thread_count).map(|i| 1 << AFFINITY_MAPPING[i]).fold(0, |a, b| a | b);
 
       let mut total_time = 0.0;
-      let runs = 50;
+      let runs = 100;
       for _ in 0 .. runs {
         let mut command = std::process::Command::new("taskset");
         command

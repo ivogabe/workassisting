@@ -5,7 +5,7 @@
 #include <cstring>
 #include <string>
 
-#define RUNS 50
+#define RUNS 100
 
 uint32_t case_primes_dynamic(uint64_t, uint64_t);
 uint32_t case_primes_static(uint64_t, uint64_t);
