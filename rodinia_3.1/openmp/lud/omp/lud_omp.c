@@ -3,7 +3,7 @@
 
 extern int omp_num_threads;
 
-#define BS 16
+#define BS 32
 
 #define AA(_i,_j) a[offset*size+_i*size+_j+offset]
 #define BB(_i,_j) a[_i*size+_j]

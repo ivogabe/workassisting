@@ -142,8 +142,8 @@ fn run_parallel_partition(worker: Worker, data_box: Box<TaskParallelPartition>) 
   let len = data.end_block - data.start_block;
   let task = unsafe { &*data.sort };
 
-  if len >= 4 {
-    let own = 2;
+  if len >= 2 {
+    let own = 1;
     let other = len - own;
     own_end = data.start_block + own;
 

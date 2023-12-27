@@ -46,17 +46,19 @@ pub fn run_with_workstealing(initial_tasks: Vec<Task>, thread_count: usize) {
 
   let finished = AtomicBool::new(false);
 
+  let full = affinity::get_thread_affinity().unwrap();
   std::thread::scope(|s| {
     for (thread_index, worker) in workers.into_iter().enumerate() {
+      affinity::set_thread_affinity([AFFINITY_MAPPING[thread_index]]).unwrap();
       let stealers_ref = &stealers;
       let finished_ref = &finished;
       s.spawn(move || {
-        affinity::set_thread_affinity([AFFINITY_MAPPING[thread_index]]).unwrap();
         while let Some(item) = claim(thread_index, thread_count, &worker, stealers_ref, finished_ref) {
           execute_task(Worker{ worker: &worker, finished: finished_ref }, item);
         }
       });
-    };
+    }
+    affinity::set_thread_affinity(full).unwrap();
   });
 }
 

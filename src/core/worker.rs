@@ -27,8 +27,10 @@ impl<'a> Workers<'a> {
 
     let is_finished = AtomicBool::new(false);
 
+    let full = affinity::get_thread_affinity().unwrap();
     std::thread::scope(|s| {
       for (thread_index, worker) in workers.into_iter().enumerate() {
+        affinity::set_thread_affinity([AFFINITY_MAPPING[thread_index]]).unwrap();
         let workers = Workers{
           is_finished: &is_finished,
           worker_count,
@@ -37,10 +39,10 @@ impl<'a> Workers<'a> {
           activities: &activities
         };
         s.spawn(move || {
-          affinity::set_thread_affinity([AFFINITY_MAPPING[thread_index]]).unwrap();
           workers.do_work(thread_index);
         });
       }
+      affinity::set_thread_affinity(full).unwrap();
     });
   }
 
@@ -66,6 +68,7 @@ impl<'a> Workers<'a> {
         // We try to perform work assisting on data parallel workloads.
         self.try_assist(thread_index);
       }
+      // In production, you should probably yield after a few failed attempts.
     }
   }
 
@@ -158,7 +161,7 @@ impl<'a> Workers<'a> {
     // Since this thread previously had no activity (i.e., a null pointer),
     // we don't have to keep track of the reference count that was previously
     // stored in the AtomicTaggedPtr.
-    self.activities[thread_index].store(TaggedPtr::new(task_ptr, 1), Ordering::Release);
+    self.activities[thread_index].store(TaggedPtr::new(task_ptr, 0), Ordering::Release);
 
     let signal = EmptySignal{ pointer: &self.activities[thread_index], task: task_ref, state: EmptySignalState::Main };
     self.call_task(unsafe { &*task_ptr }, signal, 0);
@@ -209,7 +212,7 @@ impl<'a> EmptySignal<'a> {
         let old = self.pointer.swap(TaggedPtr::new(std::ptr::null(), 0), Ordering::Relaxed);
         // Encorporate the tag of the AtomicTaggedPtr in the reference count of the tag.
         if old.ptr() == self.task {
-          self.task.active_threads.fetch_add(old.tag() as i32, Ordering::Relaxed);
+          self.task.active_threads.fetch_add(old.tag() as i32 + 1, Ordering::Relaxed);
           // Note that this fetch-and-add won't decrement the reference count to zero yet,
           // as this thread is working on the task and thus present in the reference count.
           // The reference count will be at least one now. It can only become zero in call_task.
@@ -230,7 +233,7 @@ impl<'a> EmptySignal<'a> {
           match result {
             Ok(_) => {
               // Encorporate the tag of the AtomicTaggedPtr in the reference count of the task.
-              self.task.active_threads.fetch_add(value.tag() as i32, Ordering::Relaxed);
+              self.task.active_threads.fetch_add(value.tag() as i32 + 1, Ordering::Relaxed);
             },
             Err(new) => {
               // compare-exchange failed. This is caused by either:

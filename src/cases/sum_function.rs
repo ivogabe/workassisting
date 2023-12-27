@@ -8,12 +8,12 @@ use num_format::{Locale, ToFormattedString};
 mod deque;
 mod our;
 
-pub const BLOCK_SIZE: u64 = 2048 * 2;
+pub const BLOCK_SIZE: u64 = 512;
 
 pub const START: u64 = 1024 * 1024 * 1024;
 
 pub fn run(open_mp_enabled: bool) {
-  for count in [1024 * 1024 * 32 + 1234, 128 * 1024 * 1024 + 1234] {
+  for count in [1024 * 256 + 1234, 1024 * 1024 + 1234] {
     let name = "Sum function (n = ".to_owned() + &(count).to_formatted_string(&Locale::en) + ")";
     benchmark(
       ChartStyle::WithoutKey,
@@ -39,12 +39,13 @@ pub fn run(open_mp_enabled: bool) {
 
 #[inline(always)]
 pub fn random(mut seed: u64) -> u32 {
+  // This function has equal performance in rust and clang
   seed ^= seed << 13;
   seed ^= seed >> 17;
+  seed = ((seed as f64).cos() * 123456789.0) as u64;
   seed ^= seed << 5;
   seed = seed.wrapping_mul(seed);
   seed += 9023;
-  seed = (seed as f64).sqrt() as u64;
   seed ^= seed >> 11;
   seed ^= seed << 9;
   (seed & 0xFFFFFFF) as u32

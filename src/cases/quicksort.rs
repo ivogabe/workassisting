@@ -13,14 +13,14 @@ pub mod deque_parallel_partition;
 pub mod sequential;
 pub mod task_parallel;
 
-pub const BLOCK_SIZE: usize = 1024;
+pub const BLOCK_SIZE: usize = 4096;
 
 pub const DATAPAR_CUTOFF: usize = 1024 * 32;
 pub const SEQUENTIAL_CUTOFF: usize = 1024 * 8;
 
 pub fn run(open_mp_enabled: bool) {
+  run_on(open_mp_enabled, 1024 * 256);
   run_on(open_mp_enabled, 1024 * 1024);
-  run_on(open_mp_enabled, 1024 * 1024 * 16);
 }
 
 fn run_on(open_mp_enabled: bool, size: usize) {
