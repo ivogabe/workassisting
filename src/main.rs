@@ -31,7 +31,12 @@ fn build_open_mp() -> bool {
   match std::process::Command::new("sh").arg("./reference-openmp/build.sh").spawn() {
     Ok(mut child) => {
       match child.wait() {
-        Ok(_) => {}
+        Ok(result) => {
+          if !result.success() {
+            println!("Build of OpenMP code failed.");
+            return false;
+          }
+        }
         Err(_) => {
           println!("Build of OpenMP code failed.");
           return false;
@@ -49,7 +54,34 @@ fn build_open_mp() -> bool {
   match std::process::Command::new("make").arg("lud_omp").current_dir(&openmp_lu_path).spawn() {
     Ok(mut child) => {
       match child.wait() {
-        Ok(_) => {}
+        Ok(result) => {
+          if !result.success() {
+            println!("Build of OpenMP code failed.");
+            return false;
+          }
+        }
+        Err(_) => {
+          println!("Build of OpenMP code failed.");
+          return false;
+        },
+      }
+    },
+    Err(_) => {
+      println!("Build of OpenMP code failed.");
+      return false;
+    }
+  }
+
+  let openmp_lu_taskloops_path = Path::new("./rodinia_3.1/openmp-taskloops/lud").canonicalize().unwrap();
+  match std::process::Command::new("make").arg("lud_omp").current_dir(&openmp_lu_taskloops_path).spawn() {
+    Ok(mut child) => {
+      match child.wait() {
+        Ok(result) => {
+          if !result.success() {
+            println!("Build of OpenMP code failed.");
+            return false;
+          }
+        }
         Err(_) => {
           println!("Build of OpenMP code failed.");
           return false;

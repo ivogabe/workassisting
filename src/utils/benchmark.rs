@@ -10,6 +10,7 @@ const THREAD_COUNTS: [usize; 12] = [1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20, 24];
 pub struct Benchmarker<T> {
   chart_style: ChartStyle,
   name: String,
+  title: String,
   reference_time: u64,
   expected: T,
   output: Vec<(String, ChartLineStyle, Vec<f32>)>
@@ -18,7 +19,9 @@ pub struct Benchmarker<T> {
 #[derive(PartialEq, Eq, Copy, Clone)]
 pub enum ChartStyle {
   WithKey,
-  WithoutKey
+  WithoutKey,
+  Small,
+  SmallWithKey
 }
 
 #[derive(PartialEq, Eq, Copy, Clone)]
@@ -64,11 +67,14 @@ pub enum Nesting {
 }
 
 pub fn benchmark<T: Debug + Eq, Ref: FnMut() -> T>(chart_style: ChartStyle, name: &str, reference: Ref) -> Benchmarker<T> {
+  benchmark_with_title(chart_style, name, name, reference)
+}
+pub fn benchmark_with_title<T: Debug + Eq, Ref: FnMut() -> T>(chart_style: ChartStyle, name: &str, title: &str, reference: Ref) -> Benchmarker<T> {
   println!("");
   println!("Benchmark {}", name);
   let (expected, reference_time) = time(100, reference);
   println!("Sequential   {} ms", reference_time / 1000);
-  Benchmarker{ chart_style, name: name.to_owned(), reference_time, expected, output: vec![] }
+  Benchmarker{ chart_style, name: name.to_owned(), title: title.to_owned(), reference_time, expected, output: vec![] }
 }
 
 impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
@@ -165,7 +171,7 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
     self
   }
 
-  pub fn open_mp_lud(mut self, openmp_enabled: bool, name: &str, chart_line_style: ChartLineStyle, filename: &str, m: usize) -> Self {
+  pub fn open_mp_lud(mut self, openmp_enabled: bool, name: &str, taskloops: bool, chart_line_style: ChartLineStyle, filename: &str, m: usize) -> Self {
     if !openmp_enabled { return self; }
 
     println!("{}", name);
@@ -175,17 +181,22 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
 
       let mut total_time = 0.0;
       let runs = 100;
+      let (path, n) = if taskloops {
+        ("./rodinia_3.1/openmp-taskloops/lud/omp/lud_omp", thread_count)
+      } else {
+        ("./rodinia_3.1/openmp/lud/omp/lud_omp", (thread_count + m - 1) / m)
+      };
       for _ in 0 .. runs {
         let mut command = std::process::Command::new("taskset");
         command
           .arg(format!("{:X}", affinity))
-          .arg("./rodinia_3.1/openmp/lud/omp/lud_omp")
+          .arg(path)
           .arg("-i")
           .arg(filename)
           .arg("-m")
           .arg(m.to_string())
           .arg("-n")
-          .arg(((thread_count + m - 1) / m).to_string());
+          .arg(n.to_string());
 
         let child = command
           .output()
@@ -214,19 +225,34 @@ impl<T> Drop for Benchmarker<T> {
 
     let file_gnuplot = File::create(filename.clone() + ".gnuplot").unwrap();
     let mut gnuplot = BufWriter::new(&file_gnuplot);
-    writeln!(&mut gnuplot, "set title \"{}\"", self.name).unwrap();
-    writeln!(&mut gnuplot, "set terminal pdf size 3.2,2.8").unwrap();
+    let small = self.chart_style == ChartStyle::Small || self.chart_style == ChartStyle::SmallWithKey;
+    writeln!(&mut gnuplot, "set title \"{}\"", self.title).unwrap();
+    if small {
+      writeln!(&mut gnuplot, "set terminal pdf size 2.2,2.0").unwrap();
+    } else {
+      writeln!(&mut gnuplot, "set terminal pdf size 3.2,2.9").unwrap();
+    }
     writeln!(&mut gnuplot, "set output \"{}\"", filename.clone() + ".pdf").unwrap();
-    if self.chart_style == ChartStyle::WithKey {
+    if self.chart_style == ChartStyle::WithKey || self.chart_style == ChartStyle::SmallWithKey {
       writeln!(&mut gnuplot, "set key on").unwrap();
       writeln!(&mut gnuplot, "set key top left Left reverse").unwrap();
+      if small {
+        writeln!(&mut gnuplot, "set key samplen 1.4").unwrap();
+      } else {
+        writeln!(&mut gnuplot, "set key samplen 2.5").unwrap();
+      }
     } else {
       writeln!(&mut gnuplot, "set key off").unwrap();
     }
     writeln!(&mut gnuplot, "set xrange [1:24]").unwrap();
     writeln!(&mut gnuplot, "set xtics (1, 4, 8, 12, 16, 20, 24)").unwrap();
     writeln!(&mut gnuplot, "set xlabel \"Number of threads\"").unwrap();
-    writeln!(&mut gnuplot, "set yrange [0:14]").unwrap();
+    if small {
+      writeln!(&mut gnuplot, "set yrange [0:9]").unwrap();
+      writeln!(&mut gnuplot, "set ytics (0, 2, 4, 6, 8)").unwrap();
+    } else {
+      writeln!(&mut gnuplot, "set yrange [0:16]").unwrap();
+    }
     writeln!(&mut gnuplot, "set ylabel \"Speedup\"").unwrap();
 
     write!(&mut gnuplot, "plot ").unwrap();

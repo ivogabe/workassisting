@@ -133,17 +133,18 @@ main ( int argc, char *argv[] )
   }
 
   // Warm-up run
+  omp_set_num_threads(omp_num_threads);
 
-  if (matrix_count == 1) {
-    omp_set_num_threads(omp_num_threads);
-    lud_omp(matrices[0], matrix_dim);
-  } else {
-    omp_set_max_active_levels(2);
-    omp_set_num_threads(matrix_count);
-    #pragma omp parallel for
-    for (int i = 0; i < matrix_count; i++) {
-      omp_set_num_threads(omp_num_threads);
-      lud_omp(matrices[i], matrix_dim);
+  #pragma omp parallel
+  #pragma omp single
+  {
+    if (matrix_count == 1) {
+      lud_omp(matrices[0], matrix_dim);
+    } else {
+      #pragma omp taskloop grainsize(1)
+      for (int i = 0; i < matrix_count; i++) {
+        lud_omp(matrices[i], matrix_dim);
+      }
     }
   }
 
@@ -151,23 +152,23 @@ main ( int argc, char *argv[] )
     memcpy(matrices[i], m, matrix_dim * matrix_dim * sizeof(float));
   }
 
-  if (matrix_count == 1) {
-    stopwatch_start(&sw);
-    lud_omp(matrices[0], matrix_dim);
-    stopwatch_stop(&sw);
-  } else {
-    omp_set_max_active_levels(2);
-    omp_set_num_threads(matrix_count);
+  #pragma omp parallel
+  #pragma omp single
+  {
+    if (matrix_count == 1) {
+      stopwatch_start(&sw);
+      lud_omp(matrices[0], matrix_dim);
+      stopwatch_stop(&sw);
+    } else {
+      stopwatch_start(&sw);
 
-    stopwatch_start(&sw);
+      #pragma omp taskloop grainsize(1)
+      for (int i = 0; i < matrix_count; i++) {
+        lud_omp(matrices[i], matrix_dim);
+      }
 
-    #pragma omp parallel for
-    for (int i = 0; i < matrix_count; i++) {
-      omp_set_num_threads(omp_num_threads);
-      lud_omp(matrices[i], matrix_dim);
+      stopwatch_stop(&sw);
     }
-
-    stopwatch_stop(&sw);
   }
 
   printf("Time consumed(ms): %lf\n", 1000*get_interval_by_sec(&sw));
