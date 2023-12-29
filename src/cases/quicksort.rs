@@ -28,7 +28,7 @@ fn run_on(open_mp_enabled: bool, size: usize) {
   let array2 = unsafe { alloc_undef_u32_array(size) };
   let name = "Sort (n = ".to_owned() + &size.to_formatted_string(&Locale::en) + ")";
   benchmark(
-    if size == 1024 * 1024 * 16 { ChartStyle::WithoutKey } else { ChartStyle::WithKey },
+    if size == 1024 * 1024 { ChartStyle::WithoutKey } else { ChartStyle::WithKey },
     &name,
     || reference_sequential_single(&array1)
   )
@@ -42,7 +42,7 @@ fn run_on(open_mp_enabled: bool, size: usize) {
     deque_parallel_partition::reset_and_sort(&array1, &array2, thread_count);
     output(&array2)
   })
-  .open_mp(open_mp_enabled, "OpenMP (nested)", ChartLineStyle::OmpDynamic, "quicksort", Nesting::Nested, size, None)
+  .open_mp(open_mp_enabled, "OpenMP (nested loops)", ChartLineStyle::OmpDynamic, "quicksort", Nesting::Nested, size, None)
   .open_mp(open_mp_enabled, "OpenMP (tasks)", ChartLineStyle::OmpTask, "quicksort-taskloop", Nesting::Flat, size, None)
   .our(|thread_count| {
     let pending_tasks = AtomicU64::new(1);
