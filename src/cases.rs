@@ -1,4 +1,4 @@
-pub mod lu;
+pub mod lud;
 pub mod prime;
 pub mod quicksort;
 pub mod sum_array;
