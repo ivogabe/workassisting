@@ -65,13 +65,14 @@ pub fn reference_parallel(count: u64) -> u64 {
 
 pub fn static_parallel(count: u64, thread_count: usize, pinned: bool) -> u64 {
   let result = AtomicU64::new(0);
+  let full = affinity::get_thread_affinity().unwrap();
   std::thread::scope(|s| {
     let result_ref = &result;
     for thread_index in 0 .. thread_count {
+      if pinned {
+        affinity::set_thread_affinity([AFFINITY_MAPPING[thread_index]]).unwrap();
+      }
       s.spawn(move || {
-        if pinned {
-          affinity::set_thread_affinity([AFFINITY_MAPPING[thread_index]]).unwrap();
-        }
         let start = START + thread_index as u64 * count / thread_count as u64;
         let end = START + (thread_index as u64 + 1) * count / thread_count as u64;
         let mut sum = 0;
@@ -81,6 +82,7 @@ pub fn static_parallel(count: u64, thread_count: usize, pinned: bool) -> u64 {
         result_ref.fetch_add(sum, Ordering::Relaxed);
       });
     }
+    affinity::set_thread_affinity(full).unwrap();
   });
   result.load(Ordering::Relaxed)
 }

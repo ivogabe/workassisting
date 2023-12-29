@@ -8,12 +8,12 @@ use num_format::{Locale, ToFormattedString};
 mod deque;
 mod our;
 
-pub const BLOCK_SIZE: usize = 2048 * 4;
+pub const BLOCK_SIZE: usize = 2048;
 
 pub const START: u64 = 1024 * 1024 * 1024;
 
 pub fn run(open_mp_enabled: bool) {
-  for count in [1024 * 1024 * 32 + 1234, 512 * 1024 * 1024 + 1234] {
+  for count in [1024 * 1024 * 32 + 1234, 1024 * 1024 * 64 + 1234] {
     let name = "Sum array (n = ".to_owned() + &(count).to_formatted_string(&Locale::en) + ")";
     let array: Vec<u64> = (START .. START + count).map(|number| crate::cases::sum_function::random(number) as u64).collect();
 
@@ -53,13 +53,14 @@ pub fn reference_parallel(array: &[u64]) -> u64 {
 
 pub fn static_parallel(array: &[u64], thread_count: usize, pinned: bool) -> u64 {
   let result = AtomicU64::new(0);
+  let full = affinity::get_thread_affinity().unwrap();
   std::thread::scope(|s| {
     let result_ref = &result;
     for thread_index in 0 .. thread_count {
+      if pinned {
+        affinity::set_thread_affinity([AFFINITY_MAPPING[thread_index]]).unwrap();
+      }
       s.spawn(move || {
-        if pinned {
-          affinity::set_thread_affinity([AFFINITY_MAPPING[thread_index]]).unwrap();
-        }
         let start = thread_index * array.len() / thread_count;
         let end = (thread_index + 1) * array.len() / thread_count;
         let mut sum = 0;
@@ -69,6 +70,7 @@ pub fn static_parallel(array: &[u64], thread_count: usize, pinned: bool) -> u64 
         result_ref.fetch_add(sum, Ordering::Relaxed);
       });
     }
+    affinity::set_thread_affinity(full).unwrap();
   });
   result.load(Ordering::Relaxed)
 }
