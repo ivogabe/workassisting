@@ -141,17 +141,17 @@ impl<'a> Workers<'a> {
   fn start_task(&self, task: Task, thread_index: usize) {
     if task.work_size == 0 {
       // This task doesn't have data parallelism.
-      // Hence task.function doesn't need to be called,
-      // only task.continuation.
+      // Hence task.work doesn't need to be called,
+      // only task.finish.
       // No other threads will work on this task,
       // as it is never pushed to the 'activities' list.
       // Hence we can take unique ownership of this task here,
-      // and pass it to continuation.
+      // and pass it to finish.
       let task_ref: *const TaskObject<()> = &*task;
-      let continuation = task.continuation;
-      // task.continuation will drop the object. Hence we shouldn't do that here.
+      let finish = task.finish;
+      // task.finish will drop the object. Hence we shouldn't do that here.
       std::mem::forget(task);
-      (continuation)(self, task_ref as *mut TaskObject<()>);
+      (finish)(self, task_ref as *mut TaskObject<()>);
       return;
     }
 
@@ -170,7 +170,7 @@ impl<'a> Workers<'a> {
   // Calls the work function of a task, and calls end_task afterwards
   fn call_task(&self, task: *const TaskObject<()>, signal: EmptySignal, first_index: u32) {
     let task_ref = unsafe { &*task };
-    (task_ref.function.unwrap())(self, task, LoopArguments{ work_size: task_ref.work_size, work_index: &task_ref.work_index, empty_signal: signal, first_index });
+    (task_ref.work.unwrap())(self, task, LoopArguments{ work_size: task_ref.work_size, work_index: &task_ref.work_index, empty_signal: signal, first_index });
     self.end_task(task);
   }
 
@@ -180,14 +180,14 @@ impl<'a> Workers<'a> {
     let remaining = task_ref.active_threads.fetch_sub(1, Ordering::AcqRel) - 1;
     if remaining == 0 {
       // Only one thread will decrement active_threads to zero.
-      // That thread will call the continuation of the task.
+      // That thread will call the finish of the task.
       // As documented in TaskObject.active_threads,
       // this task is not present anymore in activities at this point
       // and other threads are not working on this task any more.
       // Hence we can take unique ownership of this task now.
-      let continuation = task_ref.continuation;
-      // task.continuation will drop the object. Hence we shouldn't do that here.
-      (continuation)(self, task as *mut TaskObject<()>);
+      let finish = task_ref.finish;
+      // task.finish will drop the object. Hence we shouldn't do that here.
+      (finish)(self, task as *mut TaskObject<()>);
     }
   }
 }

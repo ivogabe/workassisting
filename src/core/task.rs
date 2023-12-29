@@ -8,10 +8,10 @@ pub struct Task (*mut TaskObject<()>);
 
 #[repr(C)]
 pub struct TaskObject<T> {
-  // 'function' borrows the TaskObject
-  pub(super) function: Option<fn(workers: &Workers, this: *const TaskObject<T>, loop_arguments: LoopArguments) -> ()>,
-  // 'continuation' takes ownership of the TaskObject
-  pub(super) continuation: fn(workers: &Workers, this: *mut TaskObject<T>) -> (),
+  // 'work' borrows the TaskObject
+  pub(super) work: Option<fn(workers: &Workers, this: *const TaskObject<T>, loop_arguments: LoopArguments) -> ()>,
+  // 'finish' takes ownership of the TaskObject
+  pub(super) finish: fn(workers: &Workers, this: *mut TaskObject<T>) -> (),
   // The number of active_threads, offset by the tag in the activities array.
   // If this task is present in activities, then:
   //   - active_threads contains - (the number of finished threads), thus non-positive.
@@ -21,7 +21,7 @@ pub struct TaskObject<T> {
   // When active_threads becomes zero after a decrement:
   //   - the task is not present in activities.
   //   - no thread is still working on this task.
-  // Hence we can run the continuation function and deallocate the task.
+  // Hence we can run the finish function and deallocate the task.
   pub(super) active_threads: AtomicI32,
   pub(super) work_index: AtomicU32,
   pub(super) work_size: u32,
@@ -37,21 +37,21 @@ impl Debug for Task {
 
 impl<T> Debug for TaskObject<T> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-    let function = self.function.map(|f| f as *const ());
-    write!(f, "Task:\n  function {:?}\n  continuation {:?}\n size {:?}\n index {:?}\n active threads {:?}", function, self.continuation as *const (), self.work_size, self.work_index, self.active_threads)
+    let work = self.work.map(|f| f as *const ());
+    write!(f, "Task:\n  work {:?}\n  finish {:?}\n size {:?}\n index {:?}\n active threads {:?}", work, self.finish as *const (), self.work_size, self.work_index, self.active_threads)
   }
 }
 
 impl Task {
   pub fn new_dataparallel<T: Send + Sync>(
-    function: fn(workers: &Workers, data: *const TaskObject<T>, loop_arguments: LoopArguments) -> (),
-    continuation: fn(workers: &Workers, data: *mut TaskObject<T>) -> (),
+    work: fn(workers: &Workers, data: *const TaskObject<T>, loop_arguments: LoopArguments) -> (),
+    finish: fn(workers: &Workers, data: *mut TaskObject<T>) -> (),
     data: T,
     work_size: u32
   ) -> Task {
     let task_box: Box<TaskObject<T>> = Box::new(TaskObject{
-      function: Some(function),
-      continuation,
+      work: Some(work),
+      finish,
       work_size,
       active_threads: AtomicI32::new(0),
       work_index: AtomicU32::new(1),
@@ -65,8 +65,8 @@ impl Task {
     data: T
   ) -> Task {
     let task_box: Box<TaskObject<T>> = Box::new(TaskObject{
-      function: None,
-      continuation: function,
+      work: None,
+      finish: function,
       work_size: 0,
       active_threads: AtomicI32::new(0),
       work_index: AtomicU32::new(0),
