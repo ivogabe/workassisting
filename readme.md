@@ -2,12 +2,13 @@
 
 This repository contains an implementation of *work assisting*, a scheduling strategy for mixing loop parallelism (data parallelism) with task parallelism.
 Threads share their current loop-parallel activity in a shared array to let other threads assist.
-Our algorithm aims at preserving the structure of loop parallelism instead of implementing all parallelism as task
-parallelism. This avoids the scheduling overhead introduced
+In contrast to most existing work in this space, our algorithm aims at preserving the structure of
+loop parallelism instead of implementing all parallelism as task parallelism.
+This avoids the scheduling overhead introduced
 by the latter and enables the use of self-scheduling for loop parallelism.
-It provides full flexibility: Neither the number of threads for a parallel loop nor the distribution over
-threads need to be fixed before the loop starts. We present benchmarks to demonstrate that our scheduling algorithm behaves
-similar to or outperforms schedulers based purely on task parallelism.
+It provides full flexibility: neither the number of threads for a parallel loop nor the distribution over
+threads need to be fixed before the loop starts. We present benchmarks to demonstrate that our scheduling algorithm, depending on the problem, behaves
+similar to, or outperforms schedulers based purely on task parallelism.
 
 The implementation can be found in `src/core` and benchmarks in `src/cases`. The benchmarks compare work assisting with work stealing with a deque (`src/utils/deque_stealer.rs`) and Rayon, a framework for parallelism in Rust. For details about work assisting and the benchmarks we refer to the paper.
 

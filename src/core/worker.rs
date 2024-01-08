@@ -219,8 +219,6 @@ impl<'a> EmptySignal<'a> {
         }
       },
       EmptySignalState::Assist => {
-        // self.pointer.compare_exchange(epoch::Shared::from(self.old), epoch::Shared::null(), Ordering::Relaxed, Ordering::Relaxed, unsafe { epoch::unprotected() }).ok();
-        // self.state = EmptySignalState::DidSignal;
         let mut value = self.pointer.load(Ordering::Relaxed);
         // Update 'pointer' using a CAS-loop.
         // We must update pointer to not point at 'self.task'.
