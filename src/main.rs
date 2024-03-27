@@ -12,6 +12,8 @@ fn main() {
     println!("Running the benchmarks without the OpenMP implementations");
   }
 
+  cases::compact::run(open_mp_enabled);
+
   let full = affinity::get_thread_affinity().unwrap();
   affinity::set_thread_affinity([AFFINITY_MAPPING[0]]).unwrap();
   cases::lud::run(open_mp_enabled);

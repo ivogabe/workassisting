@@ -1,3 +1,4 @@
+pub mod compact;
 pub mod lud;
 pub mod prime;
 pub mod quicksort;
