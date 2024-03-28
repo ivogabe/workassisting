@@ -7,6 +7,12 @@
 
 #define RUNS 100
 
+void case_compact(uint64_t, uint64_t, uint64_t**, uint64_t**);
+uint64_t** compact_alloc(uint64_t, uint64_t, bool);
+
+void case_scan(uint64_t, uint64_t, uint64_t**, uint64_t**);
+uint64_t** scan_alloc(uint64_t, uint64_t, bool);
+
 uint32_t case_primes_dynamic(uint64_t, uint64_t);
 uint32_t case_primes_static(uint64_t, uint64_t);
 uint32_t case_primes_taskloop(uint64_t, uint64_t);
@@ -29,7 +35,61 @@ int main(int argc, char *argv[]) {
   }
 
   // Switch on test case
-  if (std::strcmp(argv[1], "prime-dynamic") == 0) {
+  if (std::strcmp(argv[1], "compact") == 0) {
+    if (argc < 4) {
+      printf("Usage: ./main compact m n\n");
+      return 0;
+    }
+
+    int m = std::stoi(argv[2]);
+    int n = std::stoi(argv[3]);
+
+    uint64_t** inputs = compact_alloc(m, n, true);
+    uint64_t** outputs = compact_alloc(m, n, false);
+
+    // Warm-up run
+    case_compact(m, n, inputs, outputs);
+
+    // Initialise timer
+    auto before = std::chrono::high_resolution_clock::now();
+
+    // Perform several runs
+    for (int j = 0; j < RUNS; j++) {
+      case_compact(m, n, inputs, outputs);
+    }
+
+    // Compute and print average time
+    auto msec = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - before);
+    printf("%ld\n", msec.count() / RUNS);
+
+  } else if (std::strcmp(argv[1], "scan") == 0) {
+    if (argc < 4) {
+      printf("Usage: ./main scan m n\n");
+      return 0;
+    }
+
+    int m = std::stoi(argv[2]);
+    int n = std::stoi(argv[3]);
+
+    uint64_t** inputs = scan_alloc(m, n, true);
+    uint64_t** outputs = scan_alloc(m, n, false);
+
+    // Warm-up run
+    case_scan(m, n, inputs, outputs);
+
+    // Initialise timer
+    auto before = std::chrono::high_resolution_clock::now();
+
+    // Perform several runs
+    for (int j = 0; j < RUNS; j++) {
+      case_scan(m, n, inputs, outputs);
+    }
+
+    // Compute and print average time
+    auto msec = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - before);
+    printf("%ld\n", msec.count() / RUNS);
+
+  } else if (std::strcmp(argv[1], "prime-dynamic") == 0) {
     if (argc < 4) {
       printf("Usage: ./main prime-dynamic lowerbound upperbound\n");
       return 0;

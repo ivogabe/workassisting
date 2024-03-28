@@ -4,21 +4,22 @@ mod utils;
 
 use std::path::Path;
 
-use utils::thread_pinning::AFFINITY_MAPPING;
-
 fn main() {
+  let args: Vec<String> = std::env::args().collect();
+  if args.len() >= 2 && args[1] == "affinities" {
+    cases::compact::find_affinities();
+    return;
+  }
+
   let open_mp_enabled = build_open_mp();
   if !open_mp_enabled {
     println!("Running the benchmarks without the OpenMP implementations");
   }
 
-  cases::compact::run(open_mp_enabled);
-
-  let full = affinity::get_thread_affinity().unwrap();
-  affinity::set_thread_affinity([AFFINITY_MAPPING[0]]).unwrap();
   cases::lud::run(open_mp_enabled);
-  affinity::set_thread_affinity(full).unwrap();
   cases::quicksort::run(open_mp_enabled);
+  cases::compact::run(open_mp_enabled);
+  cases::scan::run(open_mp_enabled);
   cases::prime::run(open_mp_enabled);
   cases::sum_array::run(open_mp_enabled);
   cases::sum_function::run(open_mp_enabled);

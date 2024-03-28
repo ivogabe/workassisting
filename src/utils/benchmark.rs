@@ -5,7 +5,7 @@ use std::io::{prelude::*, BufWriter};
 use crate::utils;
 use crate::utils::thread_pinning::AFFINITY_MAPPING;
 
-const THREAD_COUNTS: [usize; 12] = [1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20, 24];
+const THREAD_COUNTS: [usize; 14] = [1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32];
 
 pub struct Benchmarker<T> {
   chart_style: ChartStyle,
@@ -122,6 +122,7 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
     println!("{}", name);
     let mut results = vec![];
     for thread_count in THREAD_COUNTS {
+      if thread_count > AFFINITY_MAPPING.len() { break; }
       let (value, time) = time(100, || parallel(thread_count));
       assert_eq!(self.expected, value);
       let relative = self.reference_time as f32 / time as f32;
@@ -138,6 +139,7 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
     println!("{}", name);
     let mut results = vec![];
     for thread_count in THREAD_COUNTS {
+      if thread_count > AFFINITY_MAPPING.len() { break; }
       let affinity = (0 .. thread_count).map(|i| 1 << AFFINITY_MAPPING[i]).fold(0, |a, b| a | b);
 
       let mut command = std::process::Command::new("taskset");
@@ -177,6 +179,7 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
     println!("{}", name);
     let mut results = vec![];
     for thread_count in THREAD_COUNTS {
+      if thread_count > AFFINITY_MAPPING.len() { break; }
       let affinity = (0 .. thread_count).map(|i| 1 << AFFINITY_MAPPING[i]).fold(0, |a, b| a | b);
 
       let mut total_time = 0.0;
@@ -244,8 +247,13 @@ impl<T> Drop for Benchmarker<T> {
     } else {
       writeln!(&mut gnuplot, "set key off").unwrap();
     }
-    writeln!(&mut gnuplot, "set xrange [1:24]").unwrap();
-    writeln!(&mut gnuplot, "set xtics (1, 4, 8, 12, 16, 20, 24)").unwrap();
+    let max_threads = 32.min(AFFINITY_MAPPING.len());
+    writeln!(&mut gnuplot, "set xrange [1:{}]", max_threads).unwrap();
+    write!(&mut gnuplot, "set xtics (1").unwrap();
+    for i in (4 ..= max_threads).step_by(4) {
+      write!(&mut gnuplot, ", {}", i).unwrap();
+    }
+    writeln!(&mut gnuplot, ")").unwrap();
     writeln!(&mut gnuplot, "set xlabel \"Number of threads\"").unwrap();
     if small {
       writeln!(&mut gnuplot, "set yrange [0:9]").unwrap();
@@ -277,6 +285,7 @@ impl<T> Drop for Benchmarker<T> {
     write!(&mut writer, "\n").unwrap();
 
     for (idx, thread_count) in THREAD_COUNTS.iter().enumerate() {
+      if *thread_count > AFFINITY_MAPPING.len() { break; }
       write!(&mut writer, "{}", thread_count).unwrap();
       for result in &self.output {
         if idx < result.2.len() {

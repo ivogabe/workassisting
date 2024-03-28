@@ -11,9 +11,25 @@ mod inner;
 
 const SIZE: usize = 1024 * 1024 * 4;
 
-pub fn run(open_mp_enabled: bool) {
-  run_on(open_mp_enabled, 1, SIZE / 16);
+pub fn find_affinities() -> Box<[usize]> {
+  let cores = affinity::get_core_num().min(32);
+  affinity::set_thread_affinity([0]).unwrap();
 
+  let inputs = vec![create_input(SIZE)];
+  let temps = vec![our::create_temp(SIZE)];
+  let outputs = vec![unsafe { utils::array::alloc_undef_u64_array(SIZE) }];
+
+  let ratio = 2;
+  let mask = ratio - 1; // Assumes ratio is a power of two
+
+  utils::thread_pinning::find_best_affinity_mapping(cores, |affinities| {
+    let pending = AtomicUsize::new(2);
+    let task = our::create_initial_task(mask, &inputs, &temps, &outputs, &pending);
+    Workers::run_on(affinities, task);
+  })
+}
+
+pub fn run(open_mp_enabled: bool) {
   run_on(open_mp_enabled, 1, SIZE);
   run_on(open_mp_enabled, 2, SIZE);
   run_on(open_mp_enabled, 4, SIZE);
@@ -23,11 +39,13 @@ pub fn run(open_mp_enabled: bool) {
 }
 
 fn run_on(open_mp_enabled: bool, array_count: usize, size: usize) {
+  utils::affinity_first();
+  
   let mut inputs = vec![];
   let mut temps = vec![];
   let mut outputs = vec![];
 
-  let ratio = 32;
+  let ratio = 2;
   let mask = ratio - 1; // Assumes ratio is a power of two
 
   for _ in 0 .. array_count {
@@ -35,6 +53,8 @@ fn run_on(open_mp_enabled: bool, array_count: usize, size: usize) {
     temps.push(our::create_temp(size));
     outputs.push(unsafe { utils::array::alloc_undef_u64_array(size) });
   }
+
+  utils::affinity_full();
 
   let name = "Compactions (n = ".to_owned() + &size.to_formatted_string(&Locale::en) + ", m = " + &array_count.to_formatted_string(&Locale::en) + ")";
   let title = "m = ".to_owned() + &array_count.to_formatted_string(&Locale::en);
@@ -53,7 +73,8 @@ fn run_on(open_mp_enabled: bool, array_count: usize, size: usize) {
   .parallel("Inner parallelism", ChartLineStyle::Static, |thread_count| {
     let task = inner::create_task(mask, &inputs, &temps, &outputs);
     Workers::run(thread_count, task);
-  });
+  })
+  .open_mp(open_mp_enabled, "OpenMP", ChartLineStyle::OmpDynamic, "compact", Nesting::Nested, array_count, Some(size));
 }
 
 pub fn reference_sequential(mask: u64, inputs: &[Box<[u64]>], outputs: &[Box<[AtomicU64]>]) -> () {

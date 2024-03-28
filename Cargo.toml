@@ -10,6 +10,7 @@ crossbeam = "0.8.2"
 rayon = "1.5.3"
 affinity = "0.1.2"
 num-format = "0.4.4"
+libc = "0.2"
 
 [profile.dev]
 opt-level = 3

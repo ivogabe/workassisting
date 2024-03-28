@@ -1,5 +1,5 @@
 use core::sync::atomic::{Ordering, AtomicU64, AtomicUsize};
-use crate::cases::compact::{compact_sequential, count_sequential};
+use crate::cases::scan::{scan_sequential, fold_sequential};
 use crate::core::worker::*;
 use crate::core::task::*;
 use crate::core::workassisting_loop::*;
@@ -8,26 +8,25 @@ pub const BLOCK_SIZE: u64 = 1024 * 4;
 
 #[derive(Copy, Clone)]
 struct InitialData<'a> {
-  mask: u64,
   inputs: &'a [Box<[u64]>],
   temps: &'a [Box<[BlockInfo]>],
   outputs: &'a [Box<[AtomicU64]>],
   pending: &'a AtomicUsize
 }
 
-pub fn create_initial_task(mask: u64, inputs: &[Box<[u64]>], temps: &[Box<[BlockInfo]>], outputs: &[Box<[AtomicU64]>], pending: &AtomicUsize) -> Task {
+pub fn create_initial_task(inputs: &[Box<[u64]>], temps: &[Box<[BlockInfo]>], outputs: &[Box<[AtomicU64]>], pending: &AtomicUsize) -> Task {
   if inputs.len() == 1 {
     pending.store(1, Ordering::Relaxed);
-    create_task(mask, &inputs[0], &temps[0], &outputs[0], pending)
+    create_task(&inputs[0], &temps[0], &outputs[0], pending)
   } else {
-    Task::new_dataparallel::<InitialData>(initial_run, initial_finish, InitialData{ mask, inputs, temps, outputs, pending }, inputs.len() as u32)
+    Task::new_dataparallel::<InitialData>(initial_run, initial_finish, InitialData{ inputs, temps, outputs, pending }, inputs.len() as u32)
   }
 }
 
 fn initial_run(workers: &Workers, task: *const TaskObject<InitialData>, loop_arguments: LoopArguments) {
   let data = unsafe { TaskObject::get_data(task) };
   workassisting_loop!(loop_arguments, |i| {
-    workers.push_task(create_task(data.mask, &data.inputs[i as usize], &data.temps[i as usize], &data.outputs[i as usize], data.pending));
+    workers.push_task(create_task(&data.inputs[i as usize], &data.temps[i as usize], &data.outputs[i as usize], data.pending));
   });
 }
 fn initial_finish(workers: &Workers, task: *mut TaskObject<InitialData>) {
@@ -39,7 +38,6 @@ fn initial_finish(workers: &Workers, task: *mut TaskObject<InitialData>) {
 
 #[derive(Copy, Clone)]
 struct Data<'a> {
-  mask: u64,
   input: &'a [u64],
   temp: &'a [BlockInfo],
   output: &'a [AtomicU64],
@@ -48,8 +46,8 @@ struct Data<'a> {
 
 pub struct BlockInfo {
   pub state: AtomicU64,
-  pub aggregate: AtomicUsize,
-  pub prefix: AtomicUsize
+  pub aggregate: AtomicU64,
+  pub prefix: AtomicU64
 }
 
 pub const STATE_INITIALIZED: u64 = 0;
@@ -58,7 +56,7 @@ pub const STATE_PREFIX_AVAILABLE: u64 = 2;
 
 pub fn create_temp(size: usize) -> Box<[BlockInfo]> {
   (0 .. (size as u64 + BLOCK_SIZE - 1) / BLOCK_SIZE).map(|_| BlockInfo{
-    state: AtomicU64::new(STATE_INITIALIZED), aggregate: AtomicUsize::new(0), prefix: AtomicUsize::new(0)
+    state: AtomicU64::new(STATE_INITIALIZED), aggregate: AtomicU64::new(0), prefix: AtomicU64::new(0)
   }).collect()
 }
 
@@ -70,9 +68,9 @@ pub fn reset(temp: &[BlockInfo]) {
   }
 }
 
-pub fn create_task(mask: u64, input: &[u64], temp: &[BlockInfo], output: &[AtomicU64], pending: &AtomicUsize) -> Task {
+pub fn create_task(input: &[u64], temp: &[BlockInfo], output: &[AtomicU64], pending: &AtomicUsize) -> Task {
   reset(temp);
-  Task::new_dataparallel::<Data>(run, finish, Data{ mask, input, temp, output, pending }, ((input.len() as u64 + BLOCK_SIZE - 1) / BLOCK_SIZE) as u32)
+  Task::new_dataparallel::<Data>(run, finish, Data{ input, temp, output, pending }, ((input.len() as u64 + BLOCK_SIZE - 1) / BLOCK_SIZE) as u32)
 }
 
 fn run(_workers: &Workers, task: *const TaskObject<Data>, loop_arguments: LoopArguments) {
@@ -102,12 +100,12 @@ fn run(_workers: &Workers, task: *const TaskObject<Data>, loop_arguments: LoopAr
     };
 
     if let Some(aggregate) = aggregate_start {
-      let local = compact_sequential(data.mask, &data.input[start .. end], data.output, aggregate);
+      let local = scan_sequential(&data.input[start .. end], aggregate, &data.output[start .. end]);
       data.temp[block_index as usize].prefix.store(local, Ordering::Relaxed);
       data.temp[block_index as usize].state.store(STATE_PREFIX_AVAILABLE, Ordering::Release);
     } else {
       sequential = false;
-      let local = count_sequential(data.mask, &data.input[start .. end]);
+      let local = fold_sequential(&data.input[start .. end]);
       // Share own local value
       data.temp[block_index as usize].aggregate.store(local, Ordering::Relaxed);
       data.temp[block_index as usize].state.store(STATE_AGGREGATE_AVAILABLE, Ordering::Release);
@@ -132,7 +130,7 @@ fn run(_workers: &Workers, task: *const TaskObject<Data>, loop_arguments: LoopAr
       // Make aggregate available
       data.temp[block_index as usize].prefix.store(aggregate + local, Ordering::Relaxed);
       data.temp[block_index as usize].state.store(STATE_PREFIX_AVAILABLE, Ordering::Release);
-      compact_sequential(data.mask, &data.input[start .. end], data.output, aggregate);
+      scan_sequential(&data.input[start .. end], aggregate, &data.output[start .. end]);
     }
   });
 }

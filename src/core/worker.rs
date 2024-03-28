@@ -1,7 +1,9 @@
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 use crossbeam::deque;
+use crossbeam::deque::Steal;
 use crate::core::task::*;
+use crate::utils;
 use crate::utils::ptr::AtomicTaggedPtr;
 use crate::utils::ptr::TaggedPtr;
 use crate::utils::thread_pinning::AFFINITY_MAPPING;
@@ -16,6 +18,11 @@ pub struct Workers<'a> {
 
 impl<'a> Workers<'a> {
   pub fn run(worker_count: usize, initial_task: Task) {
+    Workers::run_on(&AFFINITY_MAPPING[0 .. worker_count], initial_task);
+  }
+
+  pub fn run_on(affinities: &[usize], initial_task: Task) {
+    let worker_count = affinities.len();
     let workers: Vec<deque::Worker<Task>> = (0 .. worker_count).into_iter().map(|_| deque::Worker::new_lifo()).collect();
     let stealers: Box<[deque::Stealer<Task>]> = workers.iter().map(|w| w.stealer()).collect();
 
@@ -27,10 +34,10 @@ impl<'a> Workers<'a> {
 
     let is_finished = AtomicBool::new(false);
 
-    let full = affinity::get_thread_affinity().unwrap();
+    /* let full = affinity::get_thread_affinity().unwrap();
     std::thread::scope(|s| {
       for (thread_index, worker) in workers.into_iter().enumerate() {
-        affinity::set_thread_affinity([AFFINITY_MAPPING[thread_index]]).unwrap();
+        affinity::set_thread_affinity([affinities[thread_index]]).unwrap();
         let workers = Workers{
           is_finished: &is_finished,
           worker_count,
@@ -43,7 +50,26 @@ impl<'a> Workers<'a> {
         });
       }
       affinity::set_thread_affinity(full).unwrap();
-    });
+    }); */
+    let threads: Vec<libc::pthread_t> = workers.into_iter().enumerate().map(|(thread_index, worker)| {
+      let workers = Workers{
+        is_finished: &is_finished,
+        worker_count,
+        worker,
+        stealers: &stealers,
+        activities: &activities
+      };
+      unsafe {
+        utils::thread::unsafe_spawn_on(affinities[thread_index], Box::new(move || {
+          workers.do_work(thread_index);
+        })).unwrap()
+      }
+    }).collect();
+
+    for thread in threads {
+      let mut value = std::ptr::null_mut();
+      unsafe { libc::pthread_join(thread, &mut value); }
+    }
   }
 
   pub fn finish(&self) {
@@ -55,51 +81,70 @@ impl<'a> Workers<'a> {
   }
 
   fn do_work(&self, thread_index: usize) {
+    let backoff = crossbeam::utils::Backoff::new();
     loop {
       if self.is_finished.load(Ordering::Relaxed) {
         return;
       }
 
       // First try work stealing of tasks, to exploit task parallelism.
-      if let Some(task) = self.claim_task(thread_index) {
-        self.start_task(task, thread_index);
-      } else {
-        // There is not enough task parallelism.
-        // We try to perform work assisting on data parallel workloads.
-        self.try_assist(thread_index);
+      match self.claim_task(thread_index) {
+        Steal::Success(task) => {
+          self.start_task(task, thread_index);
+          backoff.reset();
+        },
+        Steal::Retry => {
+          backoff.spin();
+        },
+        Steal::Empty => {
+          // There is not enough task parallelism.
+          // We try to perform work assisting on data parallel workloads.
+          if self.try_assist(thread_index) {
+            backoff.reset();
+          } else {
+            backoff.snooze();
+          }
+        }
       }
-      // In production, you should probably yield after a few failed attempts.
     }
   }
 
-  fn claim_task(&self, thread_index: usize) -> Option<Task> {
+  fn claim_task(&self, thread_index: usize) -> Steal<Task> {
     // First we try to claim a task from our own deque.
     if let Some(item) = self.worker.pop() {
-      return Some(item);
+      return Steal::Success(item)
     }
     // If we didn't have tasks on our own deque, we try to steal a task from another thread.
     let mut other_index = thread_index;
     let increment = if thread_index % 2 == 0 { 1 } else { self.worker_count - 1 };
+    let mut retry = false;
     loop {
       other_index = (other_index + increment) % self.worker_count;
       if other_index == thread_index {
         break;
       }
-      if let Some(item) = self.stealers[other_index].steal().success() {
-        return Some(item);
+      match self.stealers[other_index].steal() {
+        Steal::Success(item) => {
+          return Steal::Success(item);
+        },
+        Steal::Retry => {
+          retry = true;
+        },
+        Steal::Empty => {
+        }
       }
     }
-    None
+    if retry { Steal::Retry } else { Steal::Empty }
   }
 
-  fn try_assist(&self, thread_index: usize) {
+  fn try_assist(&self, thread_index: usize) -> bool {
     let mut other_index = thread_index;
     let increment = if thread_index % 2 == 0 { 1 } else { self.worker_count - 1 };
 
     loop {
       other_index = (other_index + increment) % self.worker_count;
       if other_index == thread_index {
-        break;
+        return false;
       }
 
       let check = self.activities[other_index].load(Ordering::Relaxed);
@@ -131,10 +176,10 @@ impl<'a> Workers<'a> {
       if current_index >= task.work_size {
         signal.task_empty();
         self.end_task(task);
-        break;
+        return true;
       }
       self.call_task(task, signal, current_index);
-      break;
+      return true;
     }
   }
 
