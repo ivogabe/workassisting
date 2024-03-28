@@ -16,6 +16,7 @@ fn main() {
     println!("Running the benchmarks without the OpenMP implementations");
   }
 
+  utils::affinity_first();
   cases::lud::run(open_mp_enabled);
   cases::quicksort::run(open_mp_enabled);
   cases::compact::run(open_mp_enabled);

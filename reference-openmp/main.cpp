@@ -7,10 +7,10 @@
 
 #define RUNS 100
 
-void case_compact(uint64_t, uint64_t, uint64_t**, uint64_t**);
+void case_compact(int, uint64_t, uint64_t, uint64_t**, uint64_t**);
 uint64_t** compact_alloc(uint64_t, uint64_t, bool);
 
-void case_scan(uint64_t, uint64_t, uint64_t**, uint64_t**);
+void case_scan(int, uint64_t, uint64_t, uint64_t**, uint64_t**);
 uint64_t** scan_alloc(uint64_t, uint64_t, bool);
 
 uint32_t case_primes_dynamic(uint64_t, uint64_t);
@@ -41,6 +41,7 @@ int main(int argc, char *argv[]) {
       return 0;
     }
 
+    int thread_count = omp_get_num_threads();
     int m = std::stoi(argv[2]);
     int n = std::stoi(argv[3]);
 
@@ -48,14 +49,14 @@ int main(int argc, char *argv[]) {
     uint64_t** outputs = compact_alloc(m, n, false);
 
     // Warm-up run
-    case_compact(m, n, inputs, outputs);
+    case_compact(thread_count, m, n, inputs, outputs);
 
     // Initialise timer
     auto before = std::chrono::high_resolution_clock::now();
 
     // Perform several runs
     for (int j = 0; j < RUNS; j++) {
-      case_compact(m, n, inputs, outputs);
+      case_compact(thread_count, m, n, inputs, outputs);
     }
 
     // Compute and print average time
@@ -68,6 +69,7 @@ int main(int argc, char *argv[]) {
       return 0;
     }
 
+    int thread_count = omp_get_num_threads();
     int m = std::stoi(argv[2]);
     int n = std::stoi(argv[3]);
 
@@ -75,14 +77,14 @@ int main(int argc, char *argv[]) {
     uint64_t** outputs = scan_alloc(m, n, false);
 
     // Warm-up run
-    case_scan(m, n, inputs, outputs);
+    case_scan(thread_count, m, n, inputs, outputs);
 
     // Initialise timer
     auto before = std::chrono::high_resolution_clock::now();
 
     // Perform several runs
     for (int j = 0; j < RUNS; j++) {
-      case_scan(m, n, inputs, outputs);
+      case_scan(thread_count, m, n, inputs, outputs);
     }
 
     // Compute and print average time

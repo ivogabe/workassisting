@@ -25,17 +25,21 @@ void compact(uint64_t size, uint64_t* input, uint64_t* output) {
   }
 }
 
-void case_compact(uint64_t array_count, uint64_t size, uint64_t** inputs, uint64_t** outputs) {
+void case_compact(int thread_count, uint64_t array_count, uint64_t size, uint64_t** inputs, uint64_t** outputs) {
   if (array_count == 1) {
     compact(size, inputs[0], outputs[0]);
     return;
   }
+
+  omp_set_max_active_levels(2);
+  omp_set_num_threads(array_count);
 
   #pragma omp parallel for
   for (int i = 0; i < array_count; i++) {
     uint64_t* input = inputs[i];
     uint64_t* output = outputs[i];
 
+    omp_set_num_threads(thread_count);
     compact(size, inputs[i], outputs[i]);
   }
 }

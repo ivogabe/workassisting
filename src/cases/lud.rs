@@ -1,6 +1,5 @@
 use core::panic;
 use core::sync::atomic::AtomicU64;
-use crate::utils;
 use crate::utils::matrix::SquareMatrix;
 use crate::core::worker::Workers;
 use crate::utils::benchmark::{benchmark_with_title, ChartStyle, ChartLineStyle};
@@ -10,7 +9,6 @@ pub mod our;
 pub mod workstealing;
 
 pub fn run(openmp_enabled: bool) {
-  utils::affinity_first();
   test("sequential", |mut matrix| {
     sequential(&mut matrix);
     matrix
@@ -42,7 +40,6 @@ pub fn run(openmp_enabled: bool) {
   run_on(openmp_enabled, 512, 8);
   run_on(openmp_enabled, 512, 16);
   run_on(openmp_enabled, 512, 32);
-  utils::affinity_full();
 }
 
 fn run_on(openmp_enabled: bool, size: usize, matrix_count: usize) {

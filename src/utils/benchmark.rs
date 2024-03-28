@@ -184,10 +184,10 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
 
       let mut total_time = 0.0;
       let runs = 100;
-      let (path, n) = if taskloops {
-        ("./rodinia_3.1/openmp-taskloops/lud/omp/lud_omp", thread_count)
+      let path = if taskloops {
+        "./rodinia_3.1/openmp-taskloops/lud/omp/lud_omp"
       } else {
-        ("./rodinia_3.1/openmp/lud/omp/lud_omp", (thread_count + m - 1) / m)
+        "./rodinia_3.1/openmp/lud/omp/lud_omp"
       };
       for _ in 0 .. runs {
         let mut command = std::process::Command::new("taskset");
@@ -199,7 +199,7 @@ impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
           .arg("-m")
           .arg(m.to_string())
           .arg("-n")
-          .arg(n.to_string());
+          .arg(thread_count.to_string());
 
         let child = command
           .output()
