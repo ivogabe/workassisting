@@ -1,7 +1,9 @@
 set title "Primes (2 .. 1,048,578)"
 set terminal pdf size 3.2,2.9
 set output "./results/Primes_2_.._1,048,578.pdf"
-set key off
+set key on
+set key top left Left reverse
+set key samplen 2.5
 set xrange [1:24]
 set xtics (1, 4, 8, 12, 16, 20, 24)
 set xlabel "Number of threads"

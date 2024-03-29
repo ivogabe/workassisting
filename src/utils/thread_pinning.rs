@@ -5,6 +5,8 @@ use super::benchmark::time;
 // Specifies the order in which threads should be used. Tests with P threads use cores AFFINITY_MAPPING[0 .. P].
 // For AMD 2950X:
 pub const AFFINITY_MAPPING: [usize; 32] = [28, 15, 22, 17, 20, 9, 18, 11, 29, 21, 30, 26, 27, 31, 5, 2, 25, 13, 14, 10, 8, 1, 16, 6, 0, 24, 4, 12, 23, 3, 7, 19];
+// For Intel 12900:
+// pub const AFFINITY_MAPPING: [usize; 24] = [1, 13, 7, 14, 5, 3, 9, 11, 20, 18, 16, 8, 15, 17, 6, 10, 23, 2, 4, 22, 0, 19, 12, 21];
 
 pub fn find_best_affinity_mapping<F: FnMut(&[usize])>(cores: usize, mut f: F) -> Box<[usize]> {
   println!("Finding best thread affinities. This may take a while.");
