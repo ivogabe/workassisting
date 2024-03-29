@@ -37,9 +37,8 @@ fn go(_workers: &Workers, task: *const TaskObject<Data>, loop_arguments: LoopArg
   data.counter.fetch_add(local_count, Ordering::Relaxed);
 }
 
-fn finish(workers: &Workers, data: *mut TaskObject<Data>) {
-  unsafe {
-    drop(Box::from_raw(data));
-  }
+fn finish(workers: &Workers, task: *mut TaskObject<Data>) {
+  let _ = unsafe { TaskObject::take_data(task) };
+
   workers.finish();
 }
