@@ -17,6 +17,7 @@ pub fn run(open_mp_enabled: bool) {
     let name = "Sum function (n = ".to_owned() + &(count).to_formatted_string(&Locale::en) + ")";
     benchmark(
       ChartStyle::WithoutKey,
+      16,
       &name,
       || reference_sequential_single(count)
     )

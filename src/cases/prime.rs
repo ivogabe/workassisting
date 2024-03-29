@@ -13,13 +13,14 @@ const BLOCK_SIZE: u64 = 32;
 pub const COUNT: u64 = 1024 * 1024;
 
 pub fn run(open_mp_enabled: bool) {
-  run_on(open_mp_enabled, ChartStyle::WithoutKey, 2, COUNT);
+  run_on(open_mp_enabled, ChartStyle::WithKey, 2, COUNT);
 }
 
 fn run_on(open_mp_enabled: bool, style: ChartStyle, start: u64, count: u64) {
   let name = "Primes (".to_owned() + &start.to_formatted_string(&Locale::en) + " .. " + &(start + count).to_formatted_string(&Locale::en) + ")";
   benchmark(
     style,
+    16,
     &name,
     || reference_sequential_single(start, count)
   )

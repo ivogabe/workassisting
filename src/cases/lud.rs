@@ -53,7 +53,7 @@ fn run_on(openmp_enabled: bool, size: usize, matrix_count: usize) {
 
   let name = "LUD (n = ".to_owned() + &size.to_formatted_string(&Locale::en) + ", m = " + &matrix_count.to_formatted_string(&Locale::en) + ")";
   let title = "m = ".to_owned() + &matrix_count.to_formatted_string(&Locale::en);
-  benchmark_with_title(if matrix_count == 1 { ChartStyle::SmallWithKey } else { ChartStyle::Small }, &name, &title, || {
+  benchmark_with_title(if matrix_count == 1 { ChartStyle::SmallWithKey } else { ChartStyle::Small }, 9, &name, &title, || {
     for i in 0 .. matrix_count {
       input.copy_to(&mut matrices[i].0);
       sequential_tiled(&mut matrices[i].0);

@@ -9,6 +9,7 @@ const THREAD_COUNTS: [usize; 14] = [1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28
 
 pub struct Benchmarker<T> {
   chart_style: ChartStyle,
+  max_y: u64,
   name: String,
   title: String,
   reference_time: u64,
@@ -55,8 +56,8 @@ fn chart_line_style_to_str(style: ChartLineStyle) -> &'static str {
       => "pointsize 0.7 lw 1 pt 3 linecolor rgb \"#24A793\"",
     ChartLineStyle::Rayon
       => "pointsize 0.7 lw 1 pt 1 linecolor rgb \"#6E3B23\"",
-      ChartLineStyle::SequentialPartition
-        => "pointsize 0.7 lw 1 pt 1 linecolor rgb \"#24A793\"",
+    ChartLineStyle::SequentialPartition
+      => "pointsize 0.7 lw 1 pt 1 linecolor rgb \"#24A793\"",
   }
 }
 
@@ -66,15 +67,15 @@ pub enum Nesting {
   Flat
 }
 
-pub fn benchmark<T: Debug + Eq, Ref: FnMut() -> T>(chart_style: ChartStyle, name: &str, reference: Ref) -> Benchmarker<T> {
-  benchmark_with_title(chart_style, name, name, reference)
+pub fn benchmark<T: Debug + Eq, Ref: FnMut() -> T>(chart_style: ChartStyle, max_y: u64, name: &str, reference: Ref) -> Benchmarker<T> {
+  benchmark_with_title(chart_style, max_y, name, name, reference)
 }
-pub fn benchmark_with_title<T: Debug + Eq, Ref: FnMut() -> T>(chart_style: ChartStyle, name: &str, title: &str, reference: Ref) -> Benchmarker<T> {
+pub fn benchmark_with_title<T: Debug + Eq, Ref: FnMut() -> T>(chart_style: ChartStyle, max_y: u64, name: &str, title: &str, reference: Ref) -> Benchmarker<T> {
   println!("");
   println!("Benchmark {}", name);
   let (expected, reference_time) = time(100, reference);
   println!("Sequential   {} ms", reference_time / 1000);
-  Benchmarker{ chart_style, name: name.to_owned(), title: title.to_owned(), reference_time, expected, output: vec![] }
+  Benchmarker{ chart_style, max_y, name: name.to_owned(), title: title.to_owned(), reference_time, expected, output: vec![] }
 }
 
 impl<T: Copy + Debug + Eq + Send> Benchmarker<T> {
@@ -255,11 +256,11 @@ impl<T> Drop for Benchmarker<T> {
     }
     writeln!(&mut gnuplot, ")").unwrap();
     writeln!(&mut gnuplot, "set xlabel \"Number of threads\"").unwrap();
-    if small {
-      writeln!(&mut gnuplot, "set yrange [0:9]").unwrap();
+    writeln!(&mut gnuplot, "set yrange [0:{}]", self.max_y).unwrap();
+    if self.max_y == 9 {
       writeln!(&mut gnuplot, "set ytics (0, 2, 4, 6, 8)").unwrap();
-    } else {
-      writeln!(&mut gnuplot, "set yrange [0:16]").unwrap();
+    } else if self.max_y == 5 {
+      writeln!(&mut gnuplot, "set ytics (0, 1, 2, 3, 4)").unwrap();
     }
     writeln!(&mut gnuplot, "set ylabel \"Speedup\"").unwrap();
 

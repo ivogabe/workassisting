@@ -19,6 +19,7 @@ pub fn run(open_mp_enabled: bool) {
 
     benchmark(
       ChartStyle::WithKey,
+      16,
       &name,
       || reference_sequential_single(&array)
     )

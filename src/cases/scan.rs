@@ -37,13 +37,8 @@ fn run_on(open_mp_enabled: bool, array_count: usize, size: usize) {
 
   let name = "Scans (n = ".to_owned() + &size.to_formatted_string(&Locale::en) + ", m = " + &array_count.to_formatted_string(&Locale::en) + ")";
   let title = "m = ".to_owned() + &array_count.to_formatted_string(&Locale::en);
-  benchmark_with_title(if array_count == 1 { ChartStyle::SmallWithKey } else { ChartStyle::Small }, &name, &title, || {
+  benchmark_with_title(if array_count == 1 { ChartStyle::SmallWithKey } else { ChartStyle::Small }, 5, &name, &title, || {
     reference_sequential(&inputs, &outputs);
-  })
-  .parallel("Chained scan", ChartLineStyle::WorkAssisting, |thread_count| {
-    let pending = AtomicUsize::new(array_count + 1);
-    let task = our::create_initial_task(&inputs, &temps, &outputs, &pending);
-    Workers::run(thread_count, task);
   })
   .parallel("Outer parallelism", ChartLineStyle::SequentialPartition, |thread_count| {
     let task = outer::create_task(&inputs, &outputs);
@@ -53,7 +48,12 @@ fn run_on(open_mp_enabled: bool, array_count: usize, size: usize) {
     let task = inner::create_task(&inputs, &temps, &outputs);
     Workers::run(thread_count, task);
   })
-  .open_mp(open_mp_enabled, "OpenMP", ChartLineStyle::OmpDynamic, "scan", Nesting::Nested, array_count, Some(size));
+  .open_mp(open_mp_enabled, "OpenMP", ChartLineStyle::OmpDynamic, "scan", Nesting::Nested, array_count, Some(size))
+  .our(|thread_count| {
+    let pending = AtomicUsize::new(array_count + 1);
+    let task = our::create_initial_task(&inputs, &temps, &outputs, &pending);
+    Workers::run(thread_count, task);
+  });
 }
 
 pub fn reference_sequential(inputs: &[Box<[u64]>], outputs: &[Box<[AtomicU64]>]) -> () {

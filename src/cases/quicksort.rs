@@ -29,6 +29,7 @@ fn run_on(open_mp_enabled: bool, size: usize) {
   let name = "Sort (n = ".to_owned() + &size.to_formatted_string(&Locale::en) + ")";
   benchmark(
     if size == 1024 * 1024 { ChartStyle::WithoutKey } else { ChartStyle::WithKey },
+    16,
     &name,
     || reference_sequential_single(&array1)
   )
